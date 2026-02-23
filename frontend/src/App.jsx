@@ -4,7 +4,7 @@ import deployment from "./deployment.json";
 
 /* ─── Arc Testnet Config ──────────────────────────────── */
 const ARC_TESTNET = {
-  chainId: "0x4CE352", // 5042002 decimal
+  chainId: "0x4CEF52", // 5042002 decimal
   chainName: "Arc Network Testnet",
   rpcUrls: ["https://rpc.testnet.arc.network"],
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
