@@ -1,0 +1,16 @@
+{
+  "address": "0xYOUR_DEPLOYED_VAULT_ADDRESS",
+  "abi": [
+    "function deposit(uint256 amount) external",
+    "function withdraw(uint256 amount) external",
+    "function transfer(address to, uint256 amount) external",
+    "function balanceOf(address account) external view returns (uint256)",
+    "function totalVaultBalance() external view returns (uint256)",
+    "function usdc() external view returns (address)",
+    "event Deposited(address indexed user, uint256 amount, uint256 timestamp)",
+    "event Withdrawn(address indexed user, uint256 amount, uint256 timestamp)",
+    "event Transferred(address indexed from, address indexed to, uint256 amount, uint256 timestamp)"
+  ],
+  "network": "arcTestnet",
+  "usdc": "0x3600000000000000000000000000000000000000"
+}
