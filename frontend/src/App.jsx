@@ -5,9 +5,9 @@ import deployment from "./deployment.json";
 /* ─── Arc Testnet Config ──────────────────────────────── */
 const ARC_TESTNET = {
   chainId: "0x4CE352", // 5042002 decimal
-  chainName: "Arc Testnet",
+  chainName: "Arc Network Testnet",
   rpcUrls: ["https://rpc.testnet.arc.network"],
-  nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 6 },
+  nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
   blockExplorerUrls: ["https://testnet.arcscan.app"],
 };
 
@@ -71,11 +71,35 @@ export default function App() {
       const addr = await s.getAddress();
       const { chainId: cid } = await bp.getNetwork();
 
+      const targetChainId = parseInt(ARC_TESTNET.chainId, 16);
+      const onCorrectNetwork = Number(cid) === targetChainId;
+
       setProvider(bp);
       setSigner(s);
       setAccount(addr);
       setChainId(Number(cid));
-      setIsCorrectNetwork(Number(cid) === parseInt(ARC_TESTNET.chainId, 16));
+      setIsCorrectNetwork(onCorrectNetwork);
+
+      // Auto-switch to Arc Testnet if not already on it
+      if (!onCorrectNetwork) {
+        try {
+          await window.ethereum.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: ARC_TESTNET.chainId }],
+          });
+        } catch (switchErr) {
+          if (switchErr.code === 4902 || switchErr.code === -32603) {
+            try {
+              await window.ethereum.request({
+                method: "wallet_addEthereumChain",
+                params: [ARC_TESTNET],
+              });
+            } catch (addErr) {
+              setError("Could not add Arc Testnet. Please add it manually in MetaMask.");
+            }
+          }
+        }
+      }
     } catch (e) {
       setError(e.message || "Connection failed");
     }
@@ -90,13 +114,20 @@ export default function App() {
         params: [{ chainId: ARC_TESTNET.chainId }],
       });
     } catch (switchErr) {
-      if (switchErr.code === 4902) {
-        await window.ethereum.request({
-          method: "wallet_addEthereumChain",
-          params: [ARC_TESTNET],
-        });
+      // 4902 = chain not added yet, -32603 = some wallets use this instead
+      if (switchErr.code === 4902 || switchErr.code === -32603) {
+        try {
+          await window.ethereum.request({
+            method: "wallet_addEthereumChain",
+            params: [ARC_TESTNET],
+          });
+        } catch (addErr) {
+          setError("Could not add Arc Testnet. Please add it manually in MetaMask.");
+        }
+      } else if (switchErr.code === 4001) {
+        setError("Network switch rejected. Please switch to Arc Testnet manually.");
       } else {
-        setError(switchErr.message);
+        setError(switchErr.message || "Failed to switch network");
       }
     }
   }, []);
@@ -134,10 +165,9 @@ export default function App() {
 
   useEffect(() => {
     if (!window.ethereum) return;
-    const handleChain = (hex) => {
-      const id = parseInt(hex, 16);
-      setChainId(id);
-      setIsCorrectNetwork(id === parseInt(ARC_TESTNET.chainId, 16));
+    const handleChain = () => {
+      // Re-init provider + signer on any chain change
+      connectWallet();
     };
     const handleAccounts = (accs) => {
       if (accs.length === 0) {
