@@ -19,10 +19,9 @@ const USDC_ABI = [
   "function allowance(address owner, address spender) view returns (uint256)",
 ];
 
-const VAULT_ADDRESS = deployment.address;
 const VAULT_ABI = deployment.abi;
 const USDC_ADDRESS = deployment.usdc;
-const VAULT_DEPLOYED = !VAULT_ADDRESS.includes("YOUR");
+const SAVED_VAULT_KEY = "arcvault_address";
 
 /* ─── Helpers ─────────────────────────────────────────── */
 function shortenAddr(a) {
@@ -60,6 +59,19 @@ export default function App() {
   const [loading, setLoading] = useState("");
   const [error, setError] = useState("");
   const [tab, setTab] = useState("deposit");
+
+  // Vault address (dynamic — user pastes after Remix deploy)
+  const [vaultAddress, setVaultAddress] = useState(() => {
+    try {
+      const saved = localStorage.getItem(SAVED_VAULT_KEY);
+      if (saved && isAddress(saved)) return getAddress(saved);
+    } catch {}
+    const def = deployment.address;
+    return def.includes("YOUR") ? "" : def;
+  });
+  const [vaultInput, setVaultInput] = useState("");
+  const [showConfig, setShowConfig] = useState(false);
+  const vaultDeployed = !!vaultAddress && isAddress(vaultAddress);
 
   /* ─── Connect Wallet ───────────────────────────────── */
   const connectWallet = useCallback(async () => {
@@ -146,9 +158,9 @@ export default function App() {
       setDecimals(18); // native balance uses 18 decimals on-chain
 
       // Vault balance (only if contract is deployed)
-      if (VAULT_DEPLOYED) {
+      if (vaultDeployed) {
         try {
-          const vault = new Contract(VAULT_ADDRESS, VAULT_ABI, signer);
+          const vault = new Contract(vaultAddress, VAULT_ABI, signer);
           const vBal = await vault.balanceOf(addr);
           setVaultBalance(vBal.toString());
         } catch {
@@ -157,10 +169,10 @@ export default function App() {
       }
 
       // Allowance from USDC precompile (for approve flow)
-      if (VAULT_DEPLOYED) {
+      if (vaultDeployed) {
         try {
           const usdc = new Contract(USDC_ADDRESS, USDC_ABI, signer);
-          const allow = await usdc.allowance(addr, VAULT_ADDRESS);
+          const allow = await usdc.allowance(addr, vaultAddress);
           setAllowance(allow.toString());
         } catch {
           setAllowance("0");
@@ -169,7 +181,7 @@ export default function App() {
     } catch (e) {
       console.error("Balance refresh failed:", e);
     }
-  }, [signer, isCorrectNetwork]);
+  }, [signer, isCorrectNetwork, vaultAddress, vaultDeployed]);
 
   /* ─── Lifecycle ────────────────────────────────────── */
   useEffect(() => {
@@ -223,28 +235,28 @@ export default function App() {
 
   /* ─── Actions ──────────────────────────────────────── */
   const handleApprove = () => {
-    if (!VAULT_DEPLOYED) return setError("Vault contract not deployed yet.");
+    if (!vaultDeployed) return setError("Vault contract not deployed yet.");
     const parsed = parseUnits(amount || "0", decimals);
     executeTx("Approving…", () => {
       const usdc = new Contract(getAddress(USDC_ADDRESS), USDC_ABI, signer);
-      return usdc.approve(getAddress(VAULT_ADDRESS), parsed);
+      return usdc.approve(getAddress(vaultAddress), parsed);
     });
   };
 
   const handleDeposit = () => {
-    if (!VAULT_DEPLOYED) return setError("Vault contract not deployed yet.");
+    if (!vaultDeployed) return setError("Vault contract not deployed yet.");
     const parsed = parseUnits(amount || "0", decimals);
     executeTx("Depositing…", () => {
-      const vault = new Contract(getAddress(VAULT_ADDRESS), VAULT_ABI, signer);
+      const vault = new Contract(getAddress(vaultAddress), VAULT_ABI, signer);
       return vault.deposit(parsed);
     });
   };
 
   const handleWithdraw = () => {
-    if (!VAULT_DEPLOYED) return setError("Vault contract not deployed yet.");
+    if (!vaultDeployed) return setError("Vault contract not deployed yet.");
     const parsed = parseUnits(amount || "0", decimals);
     executeTx("Withdrawing…", () => {
-      const vault = new Contract(getAddress(VAULT_ADDRESS), VAULT_ABI, signer);
+      const vault = new Contract(getAddress(vaultAddress), VAULT_ABI, signer);
       return vault.withdraw(parsed);
     });
   };
@@ -256,10 +268,10 @@ export default function App() {
     const parsed = parseUnits(amount || "0", decimals);
     const checkedTo = getAddress(recipient); // validates + bypasses ENS
 
-    if (VAULT_DEPLOYED) {
+    if (vaultDeployed) {
       // Transfer through vault contract
       executeTx("Transferring…", () => {
-        const vault = new Contract(getAddress(VAULT_ADDRESS), VAULT_ABI, signer);
+        const vault = new Contract(getAddress(vaultAddress), VAULT_ABI, signer);
         return vault.transfer(checkedTo, parsed);
       });
     } else {
@@ -594,6 +606,89 @@ export default function App() {
           50% { opacity: .5; }
         }
 
+        /* ── Notice Box ── */
+        .notice-box {
+          background: rgba(251,191,36,.06);
+          border: 1px solid rgba(251,191,36,.18);
+          border-radius: 10px;
+          padding: 14px;
+          margin-bottom: 16px;
+          text-align: center;
+        }
+        .notice-box p {
+          color: var(--orange);
+          font-size: 13px;
+          margin-bottom: 10px;
+        }
+        .btn-small {
+          background: rgba(251,191,36,.12);
+          color: var(--orange);
+          border: 1px solid rgba(251,191,36,.25);
+          padding: 6px 14px;
+          border-radius: 6px;
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+          font-family: var(--font-sans);
+          transition: all .15s;
+        }
+        .btn-small:hover { background: rgba(251,191,36,.2); }
+
+        /* ── Deploy Steps ── */
+        .steps { display: flex; flex-direction: column; gap: 12px; }
+        .step {
+          display: flex;
+          gap: 12px;
+          align-items: flex-start;
+          padding: 10px 12px;
+          background: var(--surface-2);
+          border-radius: 8px;
+        }
+        .step-num {
+          flex: 0 0 24px;
+          height: 24px;
+          background: linear-gradient(135deg, var(--accent-2), var(--accent));
+          color: #0b0e11;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 12px;
+          font-weight: 800;
+          font-family: var(--font-mono);
+          margin-top: 1px;
+        }
+        .step-title {
+          display: block;
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--text);
+          margin-bottom: 3px;
+        }
+        .step-desc {
+          display: block;
+          font-size: 12px;
+          color: var(--text-dim);
+          line-height: 1.5;
+        }
+        .step-desc code {
+          background: rgba(34,211,238,.08);
+          color: var(--accent);
+          padding: 1px 5px;
+          border-radius: 4px;
+          font-family: var(--font-mono);
+          font-size: 11px;
+        }
+        .step-link {
+          display: inline-block;
+          color: var(--accent);
+          font-size: 12px;
+          font-weight: 600;
+          text-decoration: none;
+          margin-top: 2px;
+        }
+        .step-link:hover { text-decoration: underline; }
+
         /* ── Footer ── */
         .footer {
           text-align: center;
@@ -671,7 +766,7 @@ export default function App() {
                     <div className="bal-box">
                       <div className="bal-title">Vault Balance</div>
                       <div className="bal-value">
-                        {VAULT_DEPLOYED
+                        {vaultDeployed
                           ? <>{fmtUsdc(vaultBalance, decimals)}<span className="bal-unit">USDC</span></>
                           : <span style={{ fontSize: 13, color: "var(--text-dim)" }}>Not deployed</span>
                         }
@@ -701,9 +796,12 @@ export default function App() {
                   </div>
 
                   {/* Vault not deployed notice */}
-                  {!VAULT_DEPLOYED && (tab === "deposit" || tab === "withdraw") && (
-                    <div className="error-box" style={{ background: "rgba(251,191,36,.08)", borderColor: "rgba(251,191,36,.2)", color: "var(--orange)" }}>
-                      Vault contract not deployed yet. Deploy the ArcVault contract and update deployment.json to enable {tab}. Transfer works as a direct native USDC send.
+                  {!vaultDeployed && (tab === "deposit" || tab === "withdraw") && (
+                    <div className="notice-box">
+                      <p>Vault contract not deployed yet. Transfer tab works as direct USDC send.</p>
+                      <button className="btn-small" onClick={() => setShowConfig(true)}>
+                        Connect Vault
+                      </button>
                     </div>
                   )}
 
@@ -755,7 +853,7 @@ export default function App() {
                     {tab === "deposit" && needsApproval && (
                       <button
                         className="btn btn-outline"
-                        disabled={!!loading || !amount || !VAULT_DEPLOYED}
+                        disabled={!!loading || !amount || !vaultDeployed}
                         onClick={handleApprove}
                       >
                         Approve
@@ -764,7 +862,7 @@ export default function App() {
                     {tab === "deposit" && (
                       <button
                         className="btn btn-primary"
-                        disabled={!!loading || !amount || needsApproval || !VAULT_DEPLOYED}
+                        disabled={!!loading || !amount || needsApproval || !vaultDeployed}
                         onClick={handleDeposit}
                       >
                         Deposit
@@ -773,7 +871,7 @@ export default function App() {
                     {tab === "withdraw" && (
                       <button
                         className="btn btn-primary"
-                        disabled={!!loading || !amount || !VAULT_DEPLOYED}
+                        disabled={!!loading || !amount || !vaultDeployed}
                         onClick={handleWithdraw}
                       >
                         Withdraw
@@ -785,11 +883,136 @@ export default function App() {
                         disabled={!!loading || !amount || !recipient}
                         onClick={handleTransfer}
                       >
-                        {VAULT_DEPLOYED ? "Transfer" : "Send USDC"}
+                        {vaultDeployed ? "Transfer" : "Send USDC"}
                       </button>
                     )}
                   </div>
                 </div>
+
+                {/* ── Vault Config Card ─────────────── */}
+                {!vaultDeployed && !showConfig && (
+                  <div className="card" style={{ textAlign: "center" }}>
+                    <div className="card-label">Vault Setup</div>
+                    <p style={{ color: "var(--text-dim)", fontSize: 13, marginBottom: 14 }}>
+                      Deploy your ArcVault contract via Remix to enable Deposit & Withdraw.
+                    </p>
+                    <button className="btn btn-primary" style={{ maxWidth: 220 }} onClick={() => setShowConfig(true)}>
+                      Deploy & Connect Vault
+                    </button>
+                  </div>
+                )}
+
+                {showConfig && (
+                  <div className="card">
+                    <div className="card-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>Deploy Vault via Remix</span>
+                      <button onClick={() => setShowConfig(false)} style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", fontSize: 16 }}>✕</button>
+                    </div>
+
+                    <div className="steps">
+                      <div className="step">
+                        <span className="step-num">1</span>
+                        <div>
+                          <span className="step-title">Open Remix IDE</span>
+                          <a href="https://remix.ethereum.org" target="_blank" rel="noreferrer" className="step-link">remix.ethereum.org →</a>
+                        </div>
+                      </div>
+                      <div className="step">
+                        <span className="step-num">2</span>
+                        <div>
+                          <span className="step-title">Create new file</span>
+                          <span className="step-desc">File Explorer → "+" → name it <code>ArcVault.sol</code></span>
+                        </div>
+                      </div>
+                      <div className="step">
+                        <span className="step-num">3</span>
+                        <div>
+                          <span className="step-title">Paste flattened contract</span>
+                          <span className="step-desc">Copy the flattened contract code and paste into the file</span>
+                        </div>
+                      </div>
+                      <div className="step">
+                        <span className="step-num">4</span>
+                        <div>
+                          <span className="step-title">Compile</span>
+                          <span className="step-desc">Solidity Compiler tab → Select <code>0.8.20</code> → Click "Compile"</span>
+                        </div>
+                      </div>
+                      <div className="step">
+                        <span className="step-num">5</span>
+                        <div>
+                          <span className="step-title">Deploy</span>
+                          <span className="step-desc">
+                            Deploy tab → Environment: <code>Injected Provider (MetaMask)</code> →
+                            Contract: <code>ArcVault</code> →
+                            Constructor arg: <code style={{ color: "var(--accent)", wordBreak: "break-all" }}>0x3600000000000000000000000000000000000000</code> →
+                            Click "Deploy" → Confirm in MetaMask
+                          </span>
+                        </div>
+                      </div>
+                      <div className="step">
+                        <span className="step-num">6</span>
+                        <div>
+                          <span className="step-title">Copy contract address</span>
+                          <span className="step-desc">After deploy, copy the deployed contract address from Remix and paste below</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 16 }}>
+                      <label className="input-label">Vault Contract Address</label>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <input
+                          className="input"
+                          placeholder="0x... (paste from Remix)"
+                          value={vaultInput}
+                          onChange={(e) => setVaultInput(e.target.value)}
+                        />
+                        <button
+                          className="btn btn-primary"
+                          style={{ flex: "0 0 auto", padding: "12px 20px" }}
+                          disabled={!vaultInput || !isAddress(vaultInput)}
+                          onClick={() => {
+                            const addr = getAddress(vaultInput);
+                            setVaultAddress(addr);
+                            localStorage.setItem(SAVED_VAULT_KEY, addr);
+                            setVaultInput("");
+                            setShowConfig(false);
+                            refreshBalances();
+                          }}
+                        >
+                          Save
+                        </button>
+                      </div>
+                      {vaultInput && !isAddress(vaultInput) && (
+                        <span style={{ color: "var(--red)", fontSize: 11, marginTop: 4, display: "block" }}>Invalid address</span>
+                      )}
+                    </div>
+
+                    {vaultDeployed && (
+                      <div style={{ marginTop: 12, padding: "10px 12px", background: "rgba(52,211,153,.08)", border: "1px solid rgba(52,211,153,.2)", borderRadius: 8 }}>
+                        <span style={{ color: "var(--green)", fontFamily: "var(--font-mono)", fontSize: 12, wordBreak: "break-all" }}>
+                          ✓ Vault: {vaultAddress}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Show connected vault address if already set */}
+                {vaultDeployed && !showConfig && (
+                  <div style={{ display: "flex", justifyContent: "center", gap: 8, alignItems: "center", marginTop: 4, marginBottom: 8 }}>
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-dim)" }}>
+                      Vault: {shortenAddr(vaultAddress)}
+                    </span>
+                    <button
+                      onClick={() => setShowConfig(true)}
+                      style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", fontSize: 11, textDecoration: "underline" }}
+                    >
+                      change
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </>
