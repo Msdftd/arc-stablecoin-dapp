@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { BrowserProvider, Contract, formatUnits, parseUnits } from "ethers";
+import { BrowserProvider, Contract, formatUnits, parseUnits, getAddress, isAddress } from "ethers";
 import deployment from "./deployment.json";
 
 /* ─── Arc Testnet Config ──────────────────────────────── */
@@ -22,6 +22,7 @@ const USDC_ABI = [
 const VAULT_ADDRESS = deployment.address;
 const VAULT_ABI = deployment.abi;
 const USDC_ADDRESS = deployment.usdc;
+const VAULT_DEPLOYED = !VAULT_ADDRESS.includes("YOUR");
 
 /* ─── Helpers ─────────────────────────────────────────── */
 function shortenAddr(a) {
@@ -144,22 +145,26 @@ export default function App() {
       setUsdcBalance(nativeBal.toString());
       setDecimals(18); // native balance uses 18 decimals on-chain
 
-      // Vault balance (graceful fail if contract not yet deployed)
-      try {
-        const vault = new Contract(VAULT_ADDRESS, VAULT_ABI, signer);
-        const vBal = await vault.balanceOf(addr);
-        setVaultBalance(vBal.toString());
-      } catch {
-        setVaultBalance("0");
+      // Vault balance (only if contract is deployed)
+      if (VAULT_DEPLOYED) {
+        try {
+          const vault = new Contract(VAULT_ADDRESS, VAULT_ABI, signer);
+          const vBal = await vault.balanceOf(addr);
+          setVaultBalance(vBal.toString());
+        } catch {
+          setVaultBalance("0");
+        }
       }
 
       // Allowance from USDC precompile (for approve flow)
-      try {
-        const usdc = new Contract(USDC_ADDRESS, USDC_ABI, signer);
-        const allow = await usdc.allowance(addr, VAULT_ADDRESS);
-        setAllowance(allow.toString());
-      } catch {
-        setAllowance("0");
+      if (VAULT_DEPLOYED) {
+        try {
+          const usdc = new Contract(USDC_ADDRESS, USDC_ABI, signer);
+          const allow = await usdc.allowance(addr, VAULT_ADDRESS);
+          setAllowance(allow.toString());
+        } catch {
+          setAllowance("0");
+        }
       }
     } catch (e) {
       console.error("Balance refresh failed:", e);
@@ -218,35 +223,51 @@ export default function App() {
 
   /* ─── Actions ──────────────────────────────────────── */
   const handleApprove = () => {
+    if (!VAULT_DEPLOYED) return setError("Vault contract not deployed yet.");
     const parsed = parseUnits(amount || "0", decimals);
     executeTx("Approving…", () => {
-      const usdc = new Contract(USDC_ADDRESS, USDC_ABI, signer);
-      return usdc.approve(VAULT_ADDRESS, parsed);
+      const usdc = new Contract(getAddress(USDC_ADDRESS), USDC_ABI, signer);
+      return usdc.approve(getAddress(VAULT_ADDRESS), parsed);
     });
   };
 
   const handleDeposit = () => {
+    if (!VAULT_DEPLOYED) return setError("Vault contract not deployed yet.");
     const parsed = parseUnits(amount || "0", decimals);
     executeTx("Depositing…", () => {
-      const vault = new Contract(VAULT_ADDRESS, VAULT_ABI, signer);
+      const vault = new Contract(getAddress(VAULT_ADDRESS), VAULT_ABI, signer);
       return vault.deposit(parsed);
     });
   };
 
   const handleWithdraw = () => {
+    if (!VAULT_DEPLOYED) return setError("Vault contract not deployed yet.");
     const parsed = parseUnits(amount || "0", decimals);
     executeTx("Withdrawing…", () => {
-      const vault = new Contract(VAULT_ADDRESS, VAULT_ABI, signer);
+      const vault = new Contract(getAddress(VAULT_ADDRESS), VAULT_ABI, signer);
       return vault.withdraw(parsed);
     });
   };
 
   const handleTransfer = () => {
+    if (!recipient || !isAddress(recipient)) {
+      return setError("Enter a valid recipient address.");
+    }
     const parsed = parseUnits(amount || "0", decimals);
-    executeTx("Transferring…", () => {
-      const vault = new Contract(VAULT_ADDRESS, VAULT_ABI, signer);
-      return vault.transfer(recipient, parsed);
-    });
+    const checkedTo = getAddress(recipient); // validates + bypasses ENS
+
+    if (VAULT_DEPLOYED) {
+      // Transfer through vault contract
+      executeTx("Transferring…", () => {
+        const vault = new Contract(getAddress(VAULT_ADDRESS), VAULT_ABI, signer);
+        return vault.transfer(checkedTo, parsed);
+      });
+    } else {
+      // Direct native USDC transfer (no vault needed)
+      executeTx("Sending USDC…", () => {
+        return signer.sendTransaction({ to: checkedTo, value: parsed });
+      });
+    }
   };
 
   /* ─── Derived State ────────────────────────────────── */
@@ -650,8 +671,10 @@ export default function App() {
                     <div className="bal-box">
                       <div className="bal-title">Vault Balance</div>
                       <div className="bal-value">
-                        {fmtUsdc(vaultBalance, decimals)}
-                        <span className="bal-unit">USDC</span>
+                        {VAULT_DEPLOYED
+                          ? <>{fmtUsdc(vaultBalance, decimals)}<span className="bal-unit">USDC</span></>
+                          : <span style={{ fontSize: 13, color: "var(--text-dim)" }}>Not deployed</span>
+                        }
                       </div>
                     </div>
                   </div>
@@ -676,6 +699,13 @@ export default function App() {
                       </button>
                     ))}
                   </div>
+
+                  {/* Vault not deployed notice */}
+                  {!VAULT_DEPLOYED && (tab === "deposit" || tab === "withdraw") && (
+                    <div className="error-box" style={{ background: "rgba(251,191,36,.08)", borderColor: "rgba(251,191,36,.2)", color: "var(--orange)" }}>
+                      Vault contract not deployed yet. Deploy the ArcVault contract and update deployment.json to enable {tab}. Transfer works as a direct native USDC send.
+                    </div>
+                  )}
 
                   {/* Status */}
                   {txHash && (
@@ -725,7 +755,7 @@ export default function App() {
                     {tab === "deposit" && needsApproval && (
                       <button
                         className="btn btn-outline"
-                        disabled={!!loading || !amount}
+                        disabled={!!loading || !amount || !VAULT_DEPLOYED}
                         onClick={handleApprove}
                       >
                         Approve
@@ -734,7 +764,7 @@ export default function App() {
                     {tab === "deposit" && (
                       <button
                         className="btn btn-primary"
-                        disabled={!!loading || !amount || needsApproval}
+                        disabled={!!loading || !amount || needsApproval || !VAULT_DEPLOYED}
                         onClick={handleDeposit}
                       >
                         Deposit
@@ -743,7 +773,7 @@ export default function App() {
                     {tab === "withdraw" && (
                       <button
                         className="btn btn-primary"
-                        disabled={!!loading || !amount}
+                        disabled={!!loading || !amount || !VAULT_DEPLOYED}
                         onClick={handleWithdraw}
                       >
                         Withdraw
@@ -755,7 +785,7 @@ export default function App() {
                         disabled={!!loading || !amount || !recipient}
                         onClick={handleTransfer}
                       >
-                        Transfer
+                        {VAULT_DEPLOYED ? "Transfer" : "Send USDC"}
                       </button>
                     )}
                   </div>
