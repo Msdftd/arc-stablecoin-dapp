@@ -27,10 +27,11 @@ const USDC_ADDRESS = deployment.usdc;
 function shortenAddr(a) {
   return a ? `${a.slice(0, 6)}···${a.slice(-4)}` : "";
 }
-function fmtUsdc(raw, dec = 6) {
-  return Number(formatUnits(raw, dec)).toLocaleString("en-US", {
+function fmtUsdc(raw, dec = 18) {
+  const val = Number(formatUnits(raw, dec));
+  return val.toLocaleString("en-US", {
     minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 4,
   });
 }
 
@@ -47,7 +48,7 @@ export default function App() {
   const [usdcBalance, setUsdcBalance] = useState("0");
   const [vaultBalance, setVaultBalance] = useState("0");
   const [allowance, setAllowance] = useState("0");
-  const [decimals, setDecimals] = useState(6);
+  const [decimals, setDecimals] = useState(18);
 
   // Form
   const [amount, setAmount] = useState("");
@@ -137,20 +138,29 @@ export default function App() {
     if (!signer || !isCorrectNetwork) return;
     try {
       const addr = await signer.getAddress();
-      const usdc = new Contract(USDC_ADDRESS, USDC_ABI, signer);
-      const vault = new Contract(VAULT_ADDRESS, VAULT_ABI, signer);
 
-      const [bal, dec, vBal, allow] = await Promise.all([
-        usdc.balanceOf(addr),
-        usdc.decimals(),
-        vault.balanceOf(addr),
-        usdc.allowance(addr, VAULT_ADDRESS),
-      ]);
+      // USDC is the native currency on Arc — read via provider.getBalance
+      const nativeBal = await signer.provider.getBalance(addr);
+      setUsdcBalance(nativeBal.toString());
+      setDecimals(18); // native balance uses 18 decimals on-chain
 
-      setDecimals(Number(dec));
-      setUsdcBalance(bal.toString());
-      setVaultBalance(vBal.toString());
-      setAllowance(allow.toString());
+      // Vault balance (graceful fail if contract not yet deployed)
+      try {
+        const vault = new Contract(VAULT_ADDRESS, VAULT_ABI, signer);
+        const vBal = await vault.balanceOf(addr);
+        setVaultBalance(vBal.toString());
+      } catch {
+        setVaultBalance("0");
+      }
+
+      // Allowance from USDC precompile (for approve flow)
+      try {
+        const usdc = new Contract(USDC_ADDRESS, USDC_ABI, signer);
+        const allow = await usdc.allowance(addr, VAULT_ADDRESS);
+        setAllowance(allow.toString());
+      } catch {
+        setAllowance("0");
+      }
     } catch (e) {
       console.error("Balance refresh failed:", e);
     }
