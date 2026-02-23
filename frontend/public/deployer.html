@@ -5,136 +5,63 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ArcVault Deployer</title>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
   <style>
-    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-    :root {
-      --bg: #0b0e11; --surface: #131820; --surface-2: #1a2230;
-      --border: #1e293b; --text: #e2e8f0; --dim: #64748b;
-      --accent: #22d3ee; --green: #34d399; --red: #f87171; --orange: #fbbf24;
-    }
-    body {
-      background: var(--bg); color: var(--text);
-      font-family: 'DM Sans', sans-serif; min-height: 100vh;
-      display: flex; align-items: center; justify-content: center;
-      padding: 24px;
-    }
-    body::before {
-      content: ''; position: fixed; top: -40%; left: -20%;
-      width: 80%; height: 80%;
-      background: radial-gradient(ellipse, rgba(34,211,238,.06) 0%, transparent 70%);
-      pointer-events: none;
-    }
-    .card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 16px; padding: 32px; max-width: 540px; width: 100%;
-      position: relative; z-index: 1;
-    }
-    h1 {
-      font-family: 'JetBrains Mono', monospace; font-size: 22px;
-      background: linear-gradient(135deg, var(--accent), #818cf8);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      margin-bottom: 4px;
-    }
-    .sub { color: var(--dim); font-size: 13px; margin-bottom: 24px; font-family: 'JetBrains Mono', monospace; }
-
-    #log { margin-bottom: 16px; }
-    .msg {
-      padding: 12px 14px; border-radius: 10px; margin-bottom: 8px;
-      font-family: 'JetBrains Mono', monospace; font-size: 12px;
-      word-break: break-all; line-height: 1.7;
-    }
-    .msg.info { background: rgba(34,211,238,.06); border: 1px solid rgba(34,211,238,.12); color: var(--accent); }
-    .msg.ok   { background: rgba(52,211,153,.06); border: 1px solid rgba(52,211,153,.12); color: var(--green); }
-    .msg.err  { background: rgba(248,113,113,.06); border: 1px solid rgba(248,113,113,.12); color: var(--red); }
-    .msg.warn { background: rgba(251,191,36,.06); border: 1px solid rgba(251,191,36,.12); color: var(--orange); }
-
-    .btn {
-      width: 100%; padding: 16px; border: none; border-radius: 12px;
-      font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 700;
-      cursor: pointer; transition: all .2s;
-      background: linear-gradient(135deg, #06b6d4, var(--accent)); color: #0b0e11;
-    }
-    .btn:hover:not(:disabled) { box-shadow: 0 0 24px rgba(34,211,238,.2); transform: translateY(-1px); }
-    .btn:disabled { opacity: .4; cursor: not-allowed; transform: none; box-shadow: none; }
-
-    .result {
-      margin-top: 20px; padding: 20px; background: var(--surface-2);
-      border-radius: 12px; border: 1px solid rgba(52,211,153,.15); display: none;
-    }
-    .result.show { display: block; }
-    .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); margin-bottom: 8px; font-weight: 600; }
-    .addr-box {
-      font-family: 'JetBrains Mono', monospace; font-size: 13px;
-      color: var(--green); word-break: break-all;
-      background: rgba(52,211,153,.05); padding: 12px 14px; border-radius: 8px;
-      border: 1px solid rgba(52,211,153,.12); user-select: all;
-    }
-    .copy-btn {
-      margin-top: 12px; padding: 12px; width: 100%; border-radius: 8px;
-      background: rgba(52,211,153,.1); color: var(--green);
-      border: 1px solid rgba(52,211,153,.2); font-weight: 700;
-      cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 13px;
-      transition: all .15s;
-    }
-    .copy-btn:hover { background: rgba(52,211,153,.18); }
-    .next-step {
-      margin-top: 14px; padding: 12px; background: rgba(34,211,238,.05);
-      border-radius: 8px; font-size: 13px; color: var(--dim); line-height: 1.6;
-    }
-    .next-step a { color: var(--accent); font-weight: 600; }
-    .next-step strong { color: var(--text); }
-
-    .progress { margin-bottom: 16px; }
-    .progress-bar {
-      height: 3px; background: var(--surface-2); border-radius: 2px; overflow: hidden;
-    }
-    .progress-fill {
-      height: 100%; background: linear-gradient(90deg, var(--accent), #818cf8);
-      border-radius: 2px; transition: width .5s ease;
-    }
-    .progress-text { font-size: 11px; color: var(--dim); margin-top: 6px; font-family: 'JetBrains Mono', monospace; }
-
-    .spinner { display: inline-block; animation: spin .8s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+    :root{--bg:#0b0e11;--surface:#131820;--s2:#1a2230;--border:#1e293b;--text:#e2e8f0;--dim:#64748b;--accent:#22d3ee;--green:#34d399;--red:#f87171;--orange:#fbbf24}
+    body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+    body::before{content:'';position:fixed;top:-40%;left:-20%;width:80%;height:80%;background:radial-gradient(ellipse,rgba(34,211,238,.06) 0%,transparent 70%);pointer-events:none}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px;max-width:540px;width:100%;position:relative;z-index:1}
+    h1{font-family:'JetBrains Mono',monospace;font-size:22px;background:linear-gradient(135deg,var(--accent),#818cf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:4px}
+    .sub{color:var(--dim);font-size:13px;margin-bottom:24px;font-family:'JetBrains Mono',monospace}
+    #log{margin-bottom:16px}
+    .m{padding:12px 14px;border-radius:10px;margin-bottom:8px;font-family:'JetBrains Mono',monospace;font-size:12px;word-break:break-all;line-height:1.7}
+    .m.i{background:rgba(34,211,238,.06);border:1px solid rgba(34,211,238,.12);color:var(--accent)}
+    .m.o{background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.12);color:var(--green)}
+    .m.e{background:rgba(248,113,113,.06);border:1px solid rgba(248,113,113,.12);color:var(--red)}
+    .m.w{background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.12);color:var(--orange)}
+    .btn{width:100%;padding:16px;border:none;border-radius:12px;font-family:'DM Sans',sans-serif;font-size:15px;font-weight:700;cursor:pointer;transition:all .2s;background:linear-gradient(135deg,#06b6d4,var(--accent));color:#0b0e11}
+    .btn:hover:not(:disabled){box-shadow:0 0 24px rgba(34,211,238,.2);transform:translateY(-1px)}
+    .btn:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none}
+    .result{margin-top:20px;padding:20px;background:var(--s2);border-radius:12px;border:1px solid rgba(52,211,153,.15);display:none}
+    .result.show{display:block}
+    .label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:8px;font-weight:600}
+    .addr{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--green);word-break:break-all;background:rgba(52,211,153,.05);padding:12px 14px;border-radius:8px;border:1px solid rgba(52,211,153,.12);user-select:all}
+    .cbtn{margin-top:12px;padding:12px;width:100%;border-radius:8px;background:rgba(52,211,153,.1);color:var(--green);border:1px solid rgba(52,211,153,.2);font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:13px;transition:all .15s}
+    .cbtn:hover{background:rgba(52,211,153,.18)}
+    .ns{margin-top:14px;padding:12px;background:rgba(34,211,238,.05);border-radius:8px;font-size:13px;color:var(--dim);line-height:1.6}
+    .ns a{color:var(--accent);font-weight:600} .ns strong{color:var(--text)}
+    .pb{height:3px;background:var(--s2);border-radius:2px;overflow:hidden;margin-bottom:16px;display:none}
+    .pf{height:100%;background:linear-gradient(90deg,var(--accent),#818cf8);border-radius:2px;transition:width .5s ease;width:0%}
+    .sp{display:inline-block;animation:sp .8s linear infinite}
+    @keyframes sp{to{transform:rotate(360deg)}}
+    a{color:var(--accent)}
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>ArcVault Deployer</h1>
-    <div class="sub">one-click deploy · Arc Testnet</div>
-
-    <div class="progress" id="progressWrap" style="display:none">
-      <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
-      <div class="progress-text" id="progressText"></div>
-    </div>
-
-    <div id="log"></div>
-
-    <button id="deployBtn" class="btn" onclick="startDeploy()">
-      Deploy ArcVault Contract
-    </button>
-
-    <div class="result" id="result">
-      <div class="label">✅ Your Vault Contract Address</div>
-      <div class="addr-box" id="contractAddr"></div>
-      <button class="copy-btn" id="copyBtn" onclick="copyAddr()">📋 Copy Address</button>
-      <div class="next-step">
-        Now go to your <a href="https://arc-stablecoin-dapp.vercel.app" target="_blank">ArcVault dApp</a>,
-        click <strong>"Deploy & Connect Vault"</strong>, paste this address, and hit <strong>Save</strong>.
-      </div>
+<div class="card">
+  <h1>ArcVault Deployer</h1>
+  <div class="sub">one-click deploy · Arc Testnet</div>
+  <div class="pb" id="pb"><div class="pf" id="pf"></div></div>
+  <div id="log"></div>
+  <button class="btn" id="btn" onclick="go()">Deploy ArcVault Contract</button>
+  <div class="result" id="result">
+    <div class="label">✅ Your Vault Contract Address</div>
+    <div class="addr" id="ca"></div>
+    <button class="cbtn" id="cb" onclick="cp()">📋 Copy Address</button>
+    <div class="ns">
+      Now go to your <a href="https://arc-stablecoin-dapp.vercel.app" target="_blank">ArcVault dApp</a>,
+      click <strong>"Deploy & Connect Vault"</strong>, paste this address, and hit <strong>Save</strong>.
     </div>
   </div>
+</div>
+<script>
+const USDC = "0x3600000000000000000000000000000000000000";
+const ARC_ID = 5042002;
+const ARC_HEX = "0x4CE352";
 
-  <!-- ethers.js v6 -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
-
-  <script>
-// ═══════════════════════════════════════════════════════════
-//  ArcVault — Flattened Solidity Source
-// ═══════════════════════════════════════════════════════════
-const SOURCE = `// SPDX-License-Identifier: MIT
+const SRC = `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
-
 interface IERC20 {
     function totalSupply() external view returns (uint256);
     function balanceOf(address account) external view returns (uint256);
@@ -143,7 +70,6 @@ interface IERC20 {
     function approve(address spender, uint256 value) external returns (bool);
     function transferFrom(address from, address to, uint256 value) external returns (bool);
 }
-
 library Address {
     error AddressInsufficientBalance(address account);
     error FailedInnerCall();
@@ -158,43 +84,26 @@ library Address {
     function functionCallWithValue(address target, bytes memory data, uint256 value) internal returns (bytes memory) {
         if (address(this).balance < value) revert AddressInsufficientBalance(address(this));
         (bool success, bytes memory returndata) = target.call{value: value}(data);
-        return _check(target, success, returndata);
+        return _v(target, success, returndata);
     }
-    function _check(address target, bool success, bytes memory data) internal view returns (bytes memory) {
-        if (!success) {
-            if (data.length > 0) { assembly { revert(add(32, data), mload(data)) } }
-            else { revert FailedInnerCall(); }
-        } else {
-            if (data.length == 0 && target.code.length == 0) revert FailedInnerCall();
-            return data;
-        }
+    function _v(address target, bool success, bytes memory data) internal view returns (bytes memory) {
+        if (!success) { if (data.length > 0) { assembly { revert(add(32, data), mload(data)) } } else { revert FailedInnerCall(); } }
+        else { if (data.length == 0 && target.code.length == 0) revert FailedInnerCall(); return data; }
     }
 }
-
 library SafeERC20 {
     using Address for address;
     error SafeERC20FailedOperation(address token);
-    function safeTransfer(IERC20 token, address to, uint256 value) internal {
-        _call(token, abi.encodeCall(token.transfer, (to, value)));
-    }
-    function safeTransferFrom(IERC20 token, address from, address to, uint256 value) internal {
-        _call(token, abi.encodeCall(token.transferFrom, (from, to, value)));
-    }
-    function _call(IERC20 token, bytes memory data) private {
-        bytes memory ret = address(token).functionCall(data);
-        if (ret.length != 0 && !abi.decode(ret, (bool))) revert SafeERC20FailedOperation(address(token));
-    }
+    function safeTransfer(IERC20 token, address to, uint256 value) internal { _c(token, abi.encodeCall(token.transfer, (to, value))); }
+    function safeTransferFrom(IERC20 token, address from, address to, uint256 value) internal { _c(token, abi.encodeCall(token.transferFrom, (from, to, value))); }
+    function _c(IERC20 token, bytes memory data) private { bytes memory r = address(token).functionCall(data); if (r.length != 0 && !abi.decode(r, (bool))) revert SafeERC20FailedOperation(address(token)); }
 }
-
 abstract contract ReentrancyGuard {
-    uint256 private constant _NOT = 1;
-    uint256 private constant _IN = 2;
-    uint256 private _s;
+    uint256 private constant _N = 1; uint256 private constant _E = 2; uint256 private _s;
     error ReentrancyGuardReentrantCall();
-    constructor() { _s = _NOT; }
-    modifier nonReentrant() { if (_s == _IN) revert ReentrancyGuardReentrantCall(); _s = _IN; _; _s = _NOT; }
+    constructor() { _s = _N; }
+    modifier nonReentrant() { if (_s == _E) revert ReentrancyGuardReentrantCall(); _s = _E; _; _s = _N; }
 }
-
 contract ArcVault is ReentrancyGuard {
     using SafeERC20 for IERC20;
     IERC20 public immutable usdc;
@@ -202,207 +111,182 @@ contract ArcVault is ReentrancyGuard {
     event Deposited(address indexed user, uint256 amount, uint256 timestamp);
     event Withdrawn(address indexed user, uint256 amount, uint256 timestamp);
     event Transferred(address indexed from, address indexed to, uint256 amount, uint256 timestamp);
-    error ZeroAmount();
-    error ZeroAddress();
-    error InsufficientBalance(uint256 requested, uint256 available);
+    error ZeroAmount(); error ZeroAddress(); error InsufficientBalance(uint256 requested, uint256 available);
     constructor(address _usdc) { if (_usdc == address(0)) revert ZeroAddress(); usdc = IERC20(_usdc); }
-    function deposit(uint256 amount) external nonReentrant {
-        if (amount == 0) revert ZeroAmount();
-        balances[msg.sender] += amount;
-        usdc.safeTransferFrom(msg.sender, address(this), amount);
-        emit Deposited(msg.sender, amount, block.timestamp);
-    }
-    function withdraw(uint256 amount) external nonReentrant {
-        if (amount == 0) revert ZeroAmount();
-        if (balances[msg.sender] < amount) revert InsufficientBalance(amount, balances[msg.sender]);
-        balances[msg.sender] -= amount;
-        usdc.safeTransfer(msg.sender, amount);
-        emit Withdrawn(msg.sender, amount, block.timestamp);
-    }
-    function transfer(address to, uint256 amount) external nonReentrant {
-        if (to == address(0)) revert ZeroAddress();
-        if (amount == 0) revert ZeroAmount();
-        if (balances[msg.sender] < amount) revert InsufficientBalance(amount, balances[msg.sender]);
-        balances[msg.sender] -= amount;
-        balances[to] += amount;
-        usdc.safeTransfer(to, amount);
-        emit Transferred(msg.sender, to, amount, block.timestamp);
-    }
+    function deposit(uint256 amount) external nonReentrant { if (amount == 0) revert ZeroAmount(); balances[msg.sender] += amount; usdc.safeTransferFrom(msg.sender, address(this), amount); emit Deposited(msg.sender, amount, block.timestamp); }
+    function withdraw(uint256 amount) external nonReentrant { if (amount == 0) revert ZeroAmount(); if (balances[msg.sender] < amount) revert InsufficientBalance(amount, balances[msg.sender]); balances[msg.sender] -= amount; usdc.safeTransfer(msg.sender, amount); emit Withdrawn(msg.sender, amount, block.timestamp); }
+    function transfer(address to, uint256 amount) external nonReentrant { if (to == address(0)) revert ZeroAddress(); if (amount == 0) revert ZeroAmount(); if (balances[msg.sender] < amount) revert InsufficientBalance(amount, balances[msg.sender]); balances[msg.sender] -= amount; balances[to] += amount; usdc.safeTransfer(to, amount); emit Transferred(msg.sender, to, amount, block.timestamp); }
     function balanceOf(address account) external view returns (uint256) { return balances[account]; }
     function totalVaultBalance() external view returns (uint256) { return usdc.balanceOf(address(this)); }
 }`;
 
-const USDC = "0x3600000000000000000000000000000000000000";
-const ARC_CHAIN_ID = 5042002;
-const ARC_HEX = "0x4CE352";
-let deployedAddr = "";
-let solcCompiler = null;
+let deployed = "";
 
-// ── UI Helpers ──
-function log(html, type = "info") {
+function log(h, t="i") {
   const d = document.createElement("div");
-  d.className = "msg " + type;
-  d.innerHTML = html;
+  d.className = "m " + t;
+  d.innerHTML = h;
   document.getElementById("log").appendChild(d);
-  d.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
-function clearLog() { document.getElementById("log").innerHTML = ""; }
-function progress(pct, text) {
-  const w = document.getElementById("progressWrap");
-  w.style.display = "block";
-  document.getElementById("progressFill").style.width = pct + "%";
-  document.getElementById("progressText").textContent = text;
+function clr() { document.getElementById("log").innerHTML = ""; }
+function prog(p) {
+  document.getElementById("pb").style.display = "block";
+  document.getElementById("pf").style.width = p + "%";
 }
 
-// ── Load Solidity Compiler ──
-function loadCompiler() {
+// ── Compile via Web Worker (importScripts is the official way to load solc in browser) ──
+function compileSolidity(source) {
   return new Promise((resolve, reject) => {
-    if (solcCompiler) return resolve(solcCompiler);
-    
-    const script = document.createElement("script");
-    script.src = "https://binaries.soliditylang.org/bin/soljson-v0.8.20+commit.a1b79de6.js";
-    script.onload = () => {
-      try {
-        // After loading, Module is the global solc object
-        const compile = Module.cwrap("solidity_compile", "string", ["string", "number", "number"]);
-        solcCompiler = { compile: (input) => compile(input, 0, 0) };
-        resolve(solcCompiler);
-      } catch (e) {
-        reject(new Error("Compiler init failed: " + e.message));
+    // Build worker code as a string — worker loads solc via importScripts
+    const code = `
+self.onmessage = function(e) {
+  try {
+    importScripts("https://binaries.soliditylang.org/bin/soljson-v0.8.20+commit.a1b79de6.js");
+    var solc = Module;
+    var compile = solc.cwrap("solidity_compile", "string", ["string", "number", "number"]);
+    var input = JSON.stringify({
+      language: "Solidity",
+      sources: { "ArcVault.sol": { content: e.data } },
+      settings: {
+        optimizer: { enabled: true, runs: 200 },
+        outputSelection: { "*": { "*": ["abi", "evm.bytecode.object"] } }
       }
+    });
+    var result = compile(input, 0, 0);
+    self.postMessage({ ok: true, data: result });
+  } catch(err) {
+    self.postMessage({ ok: false, error: err.message || String(err) });
+  }
+};`;
+
+    const blob = new Blob([code], { type: "text/javascript" });
+    const url = URL.createObjectURL(blob);
+    const w = new Worker(url);
+
+    const timer = setTimeout(() => {
+      w.terminate();
+      URL.revokeObjectURL(url);
+      reject(new Error("Compilation timed out after 90s. Refresh and retry."));
+    }, 90000);
+
+    w.onmessage = function(e) {
+      clearTimeout(timer);
+      w.terminate();
+      URL.revokeObjectURL(url);
+      if (e.data.ok) resolve(e.data.data);
+      else reject(new Error(e.data.error));
     };
-    script.onerror = () => reject(new Error("Failed to load Solidity compiler from CDN"));
-    document.head.appendChild(script);
+
+    w.onerror = function(e) {
+      clearTimeout(timer);
+      w.terminate();
+      URL.revokeObjectURL(url);
+      reject(new Error("Worker error: " + (e.message || "unknown")));
+    };
+
+    w.postMessage(source);
   });
 }
 
-// ── Main Deploy Flow ──
-async function startDeploy() {
-  const btn = document.getElementById("deployBtn");
+async function go() {
+  const btn = document.getElementById("btn");
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner">⟳</span> Working...';
-  clearLog();
+  btn.innerHTML = '<span class="sp">⟳</span> Working...';
+  clr();
 
   try {
-    // Step 1: Check MetaMask
-    if (!window.ethereum) throw new Error("MetaMask not detected! Install MetaMask first.");
-    
-    progress(5, "Connecting wallet...");
-    log("Connecting to MetaMask...");
+    // 1 — MetaMask
+    if (!window.ethereum) throw new Error("MetaMask not found! Install MetaMask first.");
+    prog(5);
+    log("Connecting wallet...");
 
     const provider = new ethers.BrowserProvider(window.ethereum);
     await provider.send("eth_requestAccounts", []);
     let signer = await provider.getSigner();
     const addr = await signer.getAddress();
     const { chainId } = await provider.getNetwork();
+    log("Wallet: <strong>" + addr.slice(0,6) + "..." + addr.slice(-4) + "</strong>", "o");
 
-    log("Wallet: <strong>" + addr.slice(0,6) + "..." + addr.slice(-4) + "</strong>", "ok");
-
-    // Step 2: Ensure correct network
-    progress(10, "Checking network...");
-    if (Number(chainId) !== ARC_CHAIN_ID) {
-      log("Switching to Arc Testnet...", "warn");
+    // 2 — Network
+    prog(10);
+    if (Number(chainId) !== ARC_ID) {
+      log("Switching to Arc Testnet...", "w");
       try {
-        await window.ethereum.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: ARC_HEX }],
-        });
+        await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: ARC_HEX }] });
       } catch (err) {
         if (err.code === 4902 || err.code === -32603) {
-          await window.ethereum.request({
-            method: "wallet_addEthereumChain",
-            params: [{
-              chainId: ARC_HEX,
-              chainName: "Arc Network Testnet",
-              rpcUrls: ["https://rpc.testnet.arc.network"],
-              nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-              blockExplorerUrls: ["https://testnet.arcscan.app"],
-            }],
-          });
-        } else {
-          throw new Error("Please switch to Arc Testnet in MetaMask manually.");
-        }
+          await window.ethereum.request({ method: "wallet_addEthereumChain", params: [{
+            chainId: ARC_HEX, chainName: "Arc Network Testnet",
+            rpcUrls: ["https://rpc.testnet.arc.network"],
+            nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
+            blockExplorerUrls: ["https://testnet.arcscan.app"],
+          }] });
+        } else throw new Error("Switch to Arc Testnet in MetaMask manually.");
       }
-      // Reconnect with new network
       const p2 = new ethers.BrowserProvider(window.ethereum);
       signer = await p2.getSigner();
-      log("Switched to Arc Testnet ✓", "ok");
+      log("Arc Testnet ✓", "o");
     } else {
-      log("Arc Testnet (chain " + ARC_CHAIN_ID + ") ✓", "ok");
+      log("Arc Testnet (chain " + ARC_ID + ") ✓", "o");
     }
 
-    // Step 3: Load & compile
-    progress(20, "Loading Solidity compiler (~6MB)...");
-    log("Loading Solidity compiler v0.8.20 — this takes 10-20 seconds...");
-    
-    const solc = await loadCompiler();
-    progress(50, "Compiling contract...");
-    log("Compiling ArcVault...");
+    // 3 — Compile
+    prog(15);
+    log("Loading Solidity compiler (~6MB)...<br>This takes 15-30 seconds, please wait...");
 
-    const input = JSON.stringify({
-      language: "Solidity",
-      sources: { "ArcVault.sol": { content: SOURCE } },
-      settings: {
-        optimizer: { enabled: true, runs: 200 },
-        outputSelection: { "*": { "*": ["abi", "evm.bytecode.object"] } }
-      }
-    });
+    const raw = await compileSolidity(SRC);
+    const output = JSON.parse(raw);
 
-    const output = JSON.parse(solc.compile(input));
-
-    // Check for errors
     if (output.errors) {
-      const fatal = output.errors.filter(e => e.severity === "error");
-      if (fatal.length > 0) throw new Error("Compile error: " + fatal[0].formattedMessage);
+      const fatal = output.errors.filter(function(e) { return e.severity === "error"; });
+      if (fatal.length) throw new Error("Compile: " + fatal[0].formattedMessage);
     }
 
-    const compiled = output.contracts["ArcVault.sol"]["ArcVault"];
-    if (!compiled) throw new Error("Contract not found in compiler output");
-    
-    const abi = compiled.abi;
-    const bytecode = "0x" + compiled.evm.bytecode.object;
+    const c = output.contracts["ArcVault.sol"]["ArcVault"];
+    if (!c) throw new Error("ArcVault not found in output");
 
-    log("Compiled ✓ (bytecode: " + (bytecode.length / 2) + " bytes)", "ok");
-    progress(65, "Deploying...");
+    const abi = c.abi;
+    const bytecode = "0x" + c.evm.bytecode.object;
+    prog(60);
+    log("Compiled ✓ (" + Math.round(bytecode.length / 2) + " bytes)", "o");
 
-    // Step 4: Deploy
-    log("Deploying to Arc Testnet...<br>Constructor: <code>" + USDC + "</code><br><br>👉 <strong>Confirm the transaction in MetaMask</strong>");
+    // 4 — Deploy
+    log("Deploying to Arc Testnet...<br>👉 <strong>Confirm the transaction in MetaMask</strong>");
 
     const factory = new ethers.ContractFactory(abi, bytecode, signer);
     const contract = await factory.deploy(USDC);
 
     const txHash = contract.deploymentTransaction().hash;
-    progress(80, "Waiting for confirmation...");
-    log('Tx sent: <a href="https://testnet.arcscan.app/tx/' + txHash + '" target="_blank" style="color:var(--accent)">' + txHash.slice(0,20) + '...' + txHash.slice(-8) + '</a>');
+    prog(80);
+    log('Tx: <a href="https://testnet.arcscan.app/tx/' + txHash + '" target="_blank">' + txHash.slice(0,22) + "..." + txHash.slice(-6) + "</a>");
     log("Waiting for block confirmation...");
 
     await contract.waitForDeployment();
-    deployedAddr = await contract.getAddress();
+    deployed = await contract.getAddress();
 
-    progress(100, "Done!");
-    log("🎉 <strong>ArcVault deployed!</strong><br>" + deployedAddr, "ok");
+    prog(100);
+    log("🎉 <strong>ArcVault deployed!</strong><br>" + deployed, "o");
 
-    // Show result
-    document.getElementById("contractAddr").textContent = deployedAddr;
+    document.getElementById("ca").textContent = deployed;
     document.getElementById("result").classList.add("show");
     btn.innerHTML = "✅ Deployed!";
 
   } catch (e) {
     const msg = e?.info?.error?.message || e?.reason || e?.message || "Unknown error";
-    log(msg, "err");
+    log(msg, "e");
     btn.disabled = false;
     btn.innerHTML = "Retry Deploy";
-    document.getElementById("progressWrap").style.display = "none";
+    document.getElementById("pb").style.display = "none";
   }
 }
 
-function copyAddr() {
-  navigator.clipboard.writeText(deployedAddr).then(() => {
-    const b = document.getElementById("copyBtn");
+function cp() {
+  navigator.clipboard.writeText(deployed).then(() => {
+    const b = document.getElementById("cb");
     b.textContent = "✓ Copied!";
-    setTimeout(() => { b.textContent = "📋 Copy Address"; }, 2000);
+    setTimeout(() => b.textContent = "📋 Copy Address", 2000);
   });
 }
-  </script>
+</script>
 </body>
 </html>
