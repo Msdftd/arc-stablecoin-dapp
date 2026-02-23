@@ -58,7 +58,7 @@
 <script>
 const USDC = "0x3600000000000000000000000000000000000000";
 const ARC_ID = 5042002;
-const ARC_HEX = "0x4CE352";
+const ARC_HEX = "0x4CEF52";
 
 const SRC = `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
@@ -134,16 +134,13 @@ function prog(p) {
   document.getElementById("pf").style.width = p + "%";
 }
 
-// ── Compile via Web Worker (importScripts is the official way to load solc in browser) ──
 function compileSolidity(source) {
   return new Promise((resolve, reject) => {
-    // Build worker code as a string — worker loads solc via importScripts
     const code = `
 self.onmessage = function(e) {
   try {
     importScripts("https://binaries.soliditylang.org/bin/soljson-v0.8.20+commit.a1b79de6.js");
-    var solc = Module;
-    var compile = solc.cwrap("solidity_compile", "string", ["string", "number", "number"]);
+    var compile = Module.cwrap("solidity_compile", "string", ["string", "number", "number"]);
     var input = JSON.stringify({
       language: "Solidity",
       sources: { "ArcVault.sol": { content: e.data } },
@@ -158,32 +155,12 @@ self.onmessage = function(e) {
     self.postMessage({ ok: false, error: err.message || String(err) });
   }
 };`;
-
     const blob = new Blob([code], { type: "text/javascript" });
     const url = URL.createObjectURL(blob);
     const w = new Worker(url);
-
-    const timer = setTimeout(() => {
-      w.terminate();
-      URL.revokeObjectURL(url);
-      reject(new Error("Compilation timed out after 90s. Refresh and retry."));
-    }, 90000);
-
-    w.onmessage = function(e) {
-      clearTimeout(timer);
-      w.terminate();
-      URL.revokeObjectURL(url);
-      if (e.data.ok) resolve(e.data.data);
-      else reject(new Error(e.data.error));
-    };
-
-    w.onerror = function(e) {
-      clearTimeout(timer);
-      w.terminate();
-      URL.revokeObjectURL(url);
-      reject(new Error("Worker error: " + (e.message || "unknown")));
-    };
-
+    const timer = setTimeout(() => { w.terminate(); URL.revokeObjectURL(url); reject(new Error("Timed out (90s). Retry.")); }, 90000);
+    w.onmessage = function(e) { clearTimeout(timer); w.terminate(); URL.revokeObjectURL(url); if (e.data.ok) resolve(e.data.data); else reject(new Error(e.data.error)); };
+    w.onerror = function(e) { clearTimeout(timer); w.terminate(); URL.revokeObjectURL(url); reject(new Error("Worker: " + (e.message || "unknown"))); };
     w.postMessage(source);
   });
 }
@@ -193,10 +170,8 @@ async function go() {
   btn.disabled = true;
   btn.innerHTML = '<span class="sp">⟳</span> Working...';
   clr();
-
   try {
-    // 1 — MetaMask
-    if (!window.ethereum) throw new Error("MetaMask not found! Install MetaMask first.");
+    if (!window.ethereum) throw new Error("MetaMask not found!");
     prog(5);
     log("Connecting wallet...");
 
@@ -207,7 +182,6 @@ async function go() {
     const { chainId } = await provider.getNetwork();
     log("Wallet: <strong>" + addr.slice(0,6) + "..." + addr.slice(-4) + "</strong>", "o");
 
-    // 2 — Network
     prog(10);
     if (Number(chainId) !== ARC_ID) {
       log("Switching to Arc Testnet...", "w");
@@ -230,47 +204,35 @@ async function go() {
       log("Arc Testnet (chain " + ARC_ID + ") ✓", "o");
     }
 
-    // 3 — Compile
     prog(15);
     log("Loading Solidity compiler (~6MB)...<br>This takes 15-30 seconds, please wait...");
-
     const raw = await compileSolidity(SRC);
     const output = JSON.parse(raw);
-
     if (output.errors) {
       const fatal = output.errors.filter(function(e) { return e.severity === "error"; });
       if (fatal.length) throw new Error("Compile: " + fatal[0].formattedMessage);
     }
-
     const c = output.contracts["ArcVault.sol"]["ArcVault"];
     if (!c) throw new Error("ArcVault not found in output");
-
     const abi = c.abi;
     const bytecode = "0x" + c.evm.bytecode.object;
     prog(60);
     log("Compiled ✓ (" + Math.round(bytecode.length / 2) + " bytes)", "o");
 
-    // 4 — Deploy
     log("Deploying to Arc Testnet...<br>👉 <strong>Confirm the transaction in MetaMask</strong>");
-
     const factory = new ethers.ContractFactory(abi, bytecode, signer);
     const contract = await factory.deploy(USDC);
-
     const txHash = contract.deploymentTransaction().hash;
     prog(80);
     log('Tx: <a href="https://testnet.arcscan.app/tx/' + txHash + '" target="_blank">' + txHash.slice(0,22) + "..." + txHash.slice(-6) + "</a>");
-    log("Waiting for block confirmation...");
-
+    log("Waiting for confirmation...");
     await contract.waitForDeployment();
     deployed = await contract.getAddress();
-
     prog(100);
     log("🎉 <strong>ArcVault deployed!</strong><br>" + deployed, "o");
-
     document.getElementById("ca").textContent = deployed;
     document.getElementById("result").classList.add("show");
     btn.innerHTML = "✅ Deployed!";
-
   } catch (e) {
     const msg = e?.info?.error?.message || e?.reason || e?.message || "Unknown error";
     log(msg, "e");
