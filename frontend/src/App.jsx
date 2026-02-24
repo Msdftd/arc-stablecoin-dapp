@@ -63,12 +63,16 @@ export default function App() {
   const vaultDeployed = !!vaultAddress && isAddress(vaultAddress);
 
   /* ─── Wallet ─────────────────────────────────────────── */
-  const connectWallet = useCallback(async () => {
+  const connectWallet = useCallback(async (silent = false) => {
     try {
       setError("");
-      if (!window.ethereum) throw new Error("Install MetaMask to continue.");
+      if (!window.ethereum) { if (!silent) throw new Error("Install MetaMask to continue."); return; }
       const bp = new BrowserProvider(window.ethereum);
-      await bp.send("eth_requestAccounts", []);
+      // silent = use eth_accounts (no popup), manual = use eth_requestAccounts (popup)
+      const accs = silent
+        ? await bp.send("eth_accounts", [])
+        : await bp.send("eth_requestAccounts", []);
+      if (!accs.length) return; // not connected yet
       const s = await bp.getSigner();
       const addr = await s.getAddress();
       const { chainId: cid } = await bp.getNetwork();
@@ -76,7 +80,8 @@ export default function App() {
       const ok = Number(cid) === target;
       setProvider(bp); setSigner(s); setAccount(addr);
       setChainId(Number(cid)); setIsCorrectNetwork(ok);
-      if (!ok) {
+      localStorage.setItem("arcvault_connected", "1");
+      if (!ok && !silent) {
         try {
           await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: ARC_TESTNET.chainId }] });
         } catch (e) {
@@ -86,7 +91,15 @@ export default function App() {
           }
         }
       }
-    } catch (e) { setError(e.message || "Connection failed"); }
+    } catch (e) { if (!silent) setError(e.message || "Connection failed"); }
+  }, []);
+
+  const disconnect = useCallback(() => {
+    setAccount(""); setSigner(null); setProvider(null);
+    setChainId(null); setIsCorrectNetwork(false);
+    setUsdcBalance("0"); setVaultBalance("0"); setAllowance("0");
+    setTxHash(""); setError(""); setLoading("");
+    localStorage.removeItem("arcvault_connected");
   }, []);
 
   const switchToArc = useCallback(async () => {
@@ -115,14 +128,19 @@ export default function App() {
     } catch (e) { console.error(e); }
   }, [signer, isCorrectNetwork, vaultAddress, vaultDeployed]);
 
+  // Auto-reconnect on page load if previously connected
+  useEffect(() => {
+    if (localStorage.getItem("arcvault_connected") === "1") connectWallet(true);
+  }, [connectWallet]);
+
   useEffect(() => { refreshBalances(); const id = setInterval(refreshBalances, 12000); return () => clearInterval(id); }, [refreshBalances]);
   useEffect(() => {
     if (!window.ethereum) return;
     const hc = () => connectWallet();
-    const ha = (a) => { if (!a.length) { setAccount(""); setSigner(null); } else connectWallet(); };
+    const ha = (a) => { if (!a.length) disconnect(); else connectWallet(); };
     window.ethereum.on("chainChanged", hc); window.ethereum.on("accountsChanged", ha);
     return () => { window.ethereum.removeListener("chainChanged", hc); window.ethereum.removeListener("accountsChanged", ha); };
-  }, [connectWallet]);
+  }, [connectWallet, disconnect]);
 
   const executeTx = async (label, fn) => {
     try { setError(""); setTxHash(""); setLoading(label); const tx = await fn(); setTxHash(tx.hash); await tx.wait(); await refreshBalances(); setAmount(""); setRecipient(""); }
@@ -232,6 +250,14 @@ export default function App() {
           cursor:pointer;font-family:var(--sans);transition:all .15s;
         }
         .sw-btn:hover{background:rgba(248,113,113,.16)}
+        .dc-btn{
+          width:28px;height:28px;border-radius:7px;
+          background:rgba(255,255,255,.04);border:1px solid var(--border);
+          color:var(--dim);cursor:pointer;font-size:12px;
+          display:flex;align-items:center;justify-content:center;
+          transition:all .15s;
+        }
+        .dc-btn:hover{background:rgba(248,113,113,.1);border-color:rgba(248,113,113,.15);color:var(--red)}
 
         /* ── Balances ── */
         .bg{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -434,14 +460,17 @@ export default function App() {
         {account && (
           <>
             <div className="crd">
-              <div className="crd-lbl">Wallet</div>
-              <div className="w-row">
-                <span className="w-addr">{shortenAddr(account)}</span>
+              <div className="w-row" style={{ marginBottom: 0 }}>
+                <div>
+                  <div className="crd-lbl" style={{ marginBottom: 6 }}>Wallet</div>
+                  <span className="w-addr">{shortenAddr(account)}</span>
+                </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span className={`bdg ${isCorrectNetwork ? "bdg-ok" : "bdg-bad"}`}>
                     {isCorrectNetwork ? "Arc Testnet" : `Chain ${chainId}`}
                   </span>
                   {!isCorrectNetwork && <button className="sw-btn" onClick={switchToArc}>Switch</button>}
+                  <button className="dc-btn" onClick={disconnect} title="Disconnect">✕</button>
                 </div>
               </div>
             </div>
