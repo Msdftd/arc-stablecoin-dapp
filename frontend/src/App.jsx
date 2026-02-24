@@ -23,6 +23,11 @@ const VAULT_ABI = deployment.abi;
 const USDC_ADDRESS = deployment.usdc;
 const SAVED_VAULT_KEY = "arcvault_address";
 
+// Arc uses USDC as native gas (18 decimals via getBalance)
+// but the USDC precompile at 0x3600... uses 6 decimals for ERC20 operations
+const NATIVE_DEC = 18;
+const ERC20_DEC = 6;
+
 /* ─── Helpers ─────────────────────────────────────────── */
 function shortenAddr(a) {
   return a ? `${a.slice(0, 6)}···${a.slice(-4)}` : "";
@@ -48,7 +53,6 @@ export default function App() {
   const [usdcBalance, setUsdcBalance] = useState("0");
   const [vaultBalance, setVaultBalance] = useState("0");
   const [allowance, setAllowance] = useState("0");
-  const [decimals, setDecimals] = useState(18);
 
   // Form
   const [amount, setAmount] = useState("");
@@ -152,10 +156,9 @@ export default function App() {
     try {
       const addr = await signer.getAddress();
 
-      // USDC is the native currency on Arc — read via provider.getBalance
+      // USDC is the native currency on Arc — read via provider.getBalance (18 decimals)
       const nativeBal = await signer.provider.getBalance(addr);
       setUsdcBalance(nativeBal.toString());
-      setDecimals(18); // native balance uses 18 decimals on-chain
 
       // Vault balance (only if contract is deployed)
       if (vaultDeployed) {
@@ -236,7 +239,7 @@ export default function App() {
   /* ─── Actions ──────────────────────────────────────── */
   const handleApprove = () => {
     if (!vaultDeployed) return setError("Vault contract not deployed yet.");
-    const parsed = parseUnits(amount || "0", decimals);
+    const parsed = parseUnits(amount || "0", ERC20_DEC);
     executeTx("Approving…", () => {
       const usdc = new Contract(getAddress(USDC_ADDRESS), USDC_ABI, signer);
       return usdc.approve(getAddress(vaultAddress), parsed);
@@ -245,7 +248,7 @@ export default function App() {
 
   const handleDeposit = () => {
     if (!vaultDeployed) return setError("Vault contract not deployed yet.");
-    const parsed = parseUnits(amount || "0", decimals);
+    const parsed = parseUnits(amount || "0", ERC20_DEC);
     executeTx("Depositing…", () => {
       const vault = new Contract(getAddress(vaultAddress), VAULT_ABI, signer);
       return vault.deposit(parsed);
@@ -254,7 +257,7 @@ export default function App() {
 
   const handleWithdraw = () => {
     if (!vaultDeployed) return setError("Vault contract not deployed yet.");
-    const parsed = parseUnits(amount || "0", decimals);
+    const parsed = parseUnits(amount || "0", ERC20_DEC);
     executeTx("Withdrawing…", () => {
       const vault = new Contract(getAddress(vaultAddress), VAULT_ABI, signer);
       return vault.withdraw(parsed);
@@ -265,17 +268,16 @@ export default function App() {
     if (!recipient || !isAddress(recipient)) {
       return setError("Enter a valid recipient address.");
     }
-    const parsed = parseUnits(amount || "0", decimals);
-    const checkedTo = getAddress(recipient); // validates + bypasses ENS
+    const checkedTo = getAddress(recipient);
 
     if (vaultDeployed) {
-      // Transfer through vault contract
+      const parsed = parseUnits(amount || "0", ERC20_DEC);
       executeTx("Transferring…", () => {
         const vault = new Contract(getAddress(vaultAddress), VAULT_ABI, signer);
         return vault.transfer(checkedTo, parsed);
       });
     } else {
-      // Direct native USDC transfer (no vault needed)
+      const parsed = parseUnits(amount || "0", NATIVE_DEC);
       executeTx("Sending USDC…", () => {
         return signer.sendTransaction({ to: checkedTo, value: parsed });
       });
@@ -286,7 +288,7 @@ export default function App() {
   const needsApproval =
     tab === "deposit" &&
     amount &&
-    BigInt(allowance) < parseUnits(amount || "0", decimals);
+    BigInt(allowance) < parseUnits(amount || "0", ERC20_DEC);
 
   /* ─── Render ───────────────────────────────────────── */
   return (
@@ -759,7 +761,7 @@ export default function App() {
                     <div className="bal-box">
                       <div className="bal-title">Wallet USDC</div>
                       <div className="bal-value">
-                        {fmtUsdc(usdcBalance, decimals)}
+                        {fmtUsdc(usdcBalance, NATIVE_DEC)}
                         <span className="bal-unit">USDC</span>
                       </div>
                     </div>
@@ -767,7 +769,7 @@ export default function App() {
                       <div className="bal-title">Vault Balance</div>
                       <div className="bal-value">
                         {vaultDeployed
-                          ? <>{fmtUsdc(vaultBalance, decimals)}<span className="bal-unit">USDC</span></>
+                          ? <>{fmtUsdc(vaultBalance, ERC20_DEC)}<span className="bal-unit">USDC</span></>
                           : <span style={{ fontSize: 13, color: "var(--text-dim)" }}>Not deployed</span>
                         }
                       </div>
