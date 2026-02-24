@@ -4,7 +4,7 @@ import deployment from "./deployment.json";
 
 /* ─── Arc Testnet Config ──────────────────────────────── */
 const ARC_TESTNET = {
-  chainId: "0x4CEF52", // 5042002 decimal
+  chainId: "0x4CEF52",
   chainName: "Arc Network Testnet",
   rpcUrls: ["https://rpc.testnet.arc.network"],
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
@@ -22,9 +22,6 @@ const USDC_ABI = [
 const VAULT_ABI = deployment.abi;
 const USDC_ADDRESS = deployment.usdc;
 const SAVED_VAULT_KEY = "arcvault_address";
-
-// Arc uses USDC as native gas (18 decimals via getBalance)
-// but the USDC precompile at 0x3600... uses 6 decimals for ERC20 operations
 const NATIVE_DEC = 18;
 const ERC20_DEC = 6;
 
@@ -34,37 +31,25 @@ function shortenAddr(a) {
 }
 function fmtUsdc(raw, dec = 18) {
   const val = Number(formatUnits(raw, dec));
-  return val.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 4,
-  });
+  return val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 }
 
 /* ─── Component ───────────────────────────────────────── */
 export default function App() {
-  // Wallet
   const [provider, setProvider] = useState(null);
   const [signer, setSigner] = useState(null);
   const [account, setAccount] = useState("");
   const [chainId, setChainId] = useState(null);
   const [isCorrectNetwork, setIsCorrectNetwork] = useState(false);
-
-  // Balances
   const [usdcBalance, setUsdcBalance] = useState("0");
   const [vaultBalance, setVaultBalance] = useState("0");
   const [allowance, setAllowance] = useState("0");
-
-  // Form
   const [amount, setAmount] = useState("");
   const [recipient, setRecipient] = useState("");
-
-  // UI state
   const [txHash, setTxHash] = useState("");
   const [loading, setLoading] = useState("");
   const [error, setError] = useState("");
   const [tab, setTab] = useState("deposit");
-
-  // Vault address (dynamic — user pastes after Remix deploy)
   const [vaultAddress, setVaultAddress] = useState(() => {
     try {
       const saved = localStorage.getItem(SAVED_VAULT_KEY);
@@ -77,942 +62,530 @@ export default function App() {
   const [showConfig, setShowConfig] = useState(false);
   const vaultDeployed = !!vaultAddress && isAddress(vaultAddress);
 
-  /* ─── Connect Wallet ───────────────────────────────── */
+  /* ─── Wallet ─────────────────────────────────────────── */
   const connectWallet = useCallback(async () => {
     try {
       setError("");
       if (!window.ethereum) throw new Error("Install MetaMask to continue.");
-
       const bp = new BrowserProvider(window.ethereum);
       await bp.send("eth_requestAccounts", []);
       const s = await bp.getSigner();
       const addr = await s.getAddress();
       const { chainId: cid } = await bp.getNetwork();
-
-      const targetChainId = parseInt(ARC_TESTNET.chainId, 16);
-      const onCorrectNetwork = Number(cid) === targetChainId;
-
-      setProvider(bp);
-      setSigner(s);
-      setAccount(addr);
-      setChainId(Number(cid));
-      setIsCorrectNetwork(onCorrectNetwork);
-
-      // Auto-switch to Arc Testnet if not already on it
-      if (!onCorrectNetwork) {
+      const target = parseInt(ARC_TESTNET.chainId, 16);
+      const ok = Number(cid) === target;
+      setProvider(bp); setSigner(s); setAccount(addr);
+      setChainId(Number(cid)); setIsCorrectNetwork(ok);
+      if (!ok) {
         try {
-          await window.ethereum.request({
-            method: "wallet_switchEthereumChain",
-            params: [{ chainId: ARC_TESTNET.chainId }],
-          });
-        } catch (switchErr) {
-          if (switchErr.code === 4902 || switchErr.code === -32603) {
-            try {
-              await window.ethereum.request({
-                method: "wallet_addEthereumChain",
-                params: [ARC_TESTNET],
-              });
-            } catch (addErr) {
-              setError("Could not add Arc Testnet. Please add it manually in MetaMask.");
-            }
+          await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: ARC_TESTNET.chainId }] });
+        } catch (e) {
+          if (e.code === 4902 || e.code === -32603) {
+            try { await window.ethereum.request({ method: "wallet_addEthereumChain", params: [ARC_TESTNET] }); }
+            catch { setError("Could not add Arc Testnet."); }
           }
         }
       }
-    } catch (e) {
-      setError(e.message || "Connection failed");
-    }
+    } catch (e) { setError(e.message || "Connection failed"); }
   }, []);
 
-  /* ─── Switch Network ───────────────────────────────── */
   const switchToArc = useCallback(async () => {
     try {
       setError("");
-      await window.ethereum.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: ARC_TESTNET.chainId }],
-      });
-    } catch (switchErr) {
-      // 4902 = chain not added yet, -32603 = some wallets use this instead
-      if (switchErr.code === 4902 || switchErr.code === -32603) {
-        try {
-          await window.ethereum.request({
-            method: "wallet_addEthereumChain",
-            params: [ARC_TESTNET],
-          });
-        } catch (addErr) {
-          setError("Could not add Arc Testnet. Please add it manually in MetaMask.");
-        }
-      } else if (switchErr.code === 4001) {
-        setError("Network switch rejected. Please switch to Arc Testnet manually.");
-      } else {
-        setError(switchErr.message || "Failed to switch network");
-      }
+      await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: ARC_TESTNET.chainId }] });
+    } catch (e) {
+      if (e.code === 4902 || e.code === -32603) {
+        try { await window.ethereum.request({ method: "wallet_addEthereumChain", params: [ARC_TESTNET] }); }
+        catch { setError("Could not add Arc Testnet."); }
+      } else if (e.code === 4001) setError("Network switch rejected.");
+      else setError(e.message || "Failed to switch");
     }
   }, []);
 
-  /* ─── Refresh Balances ─────────────────────────────── */
   const refreshBalances = useCallback(async () => {
     if (!signer || !isCorrectNetwork) return;
     try {
       const addr = await signer.getAddress();
-
-      // USDC is the native currency on Arc — read via provider.getBalance (18 decimals)
-      const nativeBal = await signer.provider.getBalance(addr);
-      setUsdcBalance(nativeBal.toString());
-
-      // Vault balance (only if contract is deployed)
+      const bal = await signer.provider.getBalance(addr);
+      setUsdcBalance(bal.toString());
       if (vaultDeployed) {
-        try {
-          const vault = new Contract(vaultAddress, VAULT_ABI, signer);
-          const vBal = await vault.balanceOf(addr);
-          setVaultBalance(vBal.toString());
-        } catch {
-          setVaultBalance("0");
-        }
+        try { const v = new Contract(vaultAddress, VAULT_ABI, signer); setVaultBalance((await v.balanceOf(addr)).toString()); } catch { setVaultBalance("0"); }
+        try { const u = new Contract(USDC_ADDRESS, USDC_ABI, signer); setAllowance((await u.allowance(addr, vaultAddress)).toString()); } catch { setAllowance("0"); }
       }
-
-      // Allowance from USDC precompile (for approve flow)
-      if (vaultDeployed) {
-        try {
-          const usdc = new Contract(USDC_ADDRESS, USDC_ABI, signer);
-          const allow = await usdc.allowance(addr, vaultAddress);
-          setAllowance(allow.toString());
-        } catch {
-          setAllowance("0");
-        }
-      }
-    } catch (e) {
-      console.error("Balance refresh failed:", e);
-    }
+    } catch (e) { console.error(e); }
   }, [signer, isCorrectNetwork, vaultAddress, vaultDeployed]);
 
-  /* ─── Lifecycle ────────────────────────────────────── */
-  useEffect(() => {
-    refreshBalances();
-    const id = setInterval(refreshBalances, 12000);
-    return () => clearInterval(id);
-  }, [refreshBalances]);
-
+  useEffect(() => { refreshBalances(); const id = setInterval(refreshBalances, 12000); return () => clearInterval(id); }, [refreshBalances]);
   useEffect(() => {
     if (!window.ethereum) return;
-    const handleChain = () => {
-      // Re-init provider + signer on any chain change
-      connectWallet();
-    };
-    const handleAccounts = (accs) => {
-      if (accs.length === 0) {
-        setAccount("");
-        setSigner(null);
-      } else {
-        connectWallet();
-      }
-    };
-    window.ethereum.on("chainChanged", handleChain);
-    window.ethereum.on("accountsChanged", handleAccounts);
-    return () => {
-      window.ethereum.removeListener("chainChanged", handleChain);
-      window.ethereum.removeListener("accountsChanged", handleAccounts);
-    };
+    const hc = () => connectWallet();
+    const ha = (a) => { if (!a.length) { setAccount(""); setSigner(null); } else connectWallet(); };
+    window.ethereum.on("chainChanged", hc); window.ethereum.on("accountsChanged", ha);
+    return () => { window.ethereum.removeListener("chainChanged", hc); window.ethereum.removeListener("accountsChanged", ha); };
   }, [connectWallet]);
 
-  /* ─── Transaction Wrapper ──────────────────────────── */
   const executeTx = async (label, fn) => {
-    try {
-      setError("");
-      setTxHash("");
-      setLoading(label);
-      const tx = await fn();
-      setTxHash(tx.hash);
-      await tx.wait();
-      await refreshBalances();
-      setAmount("");
-      setRecipient("");
-    } catch (e) {
-      const msg =
-        e?.reason || e?.info?.error?.message || e?.message || "Transaction failed";
-      setError(msg);
-    } finally {
-      setLoading("");
-    }
+    try { setError(""); setTxHash(""); setLoading(label); const tx = await fn(); setTxHash(tx.hash); await tx.wait(); await refreshBalances(); setAmount(""); setRecipient(""); }
+    catch (e) { setError(e?.reason || e?.info?.error?.message || e?.message || "Transaction failed"); }
+    finally { setLoading(""); }
   };
 
-  /* ─── Actions ──────────────────────────────────────── */
-  const handleApprove = () => {
-    if (!vaultDeployed) return setError("Vault contract not deployed yet.");
-    const parsed = parseUnits(amount || "0", ERC20_DEC);
-    executeTx("Approving…", () => {
-      const usdc = new Contract(getAddress(USDC_ADDRESS), USDC_ABI, signer);
-      return usdc.approve(getAddress(vaultAddress), parsed);
-    });
-  };
-
-  const handleDeposit = () => {
-    if (!vaultDeployed) return setError("Vault contract not deployed yet.");
-    const parsed = parseUnits(amount || "0", ERC20_DEC);
-    executeTx("Depositing…", () => {
-      const vault = new Contract(getAddress(vaultAddress), VAULT_ABI, signer);
-      return vault.deposit(parsed);
-    });
-  };
-
-  const handleWithdraw = () => {
-    if (!vaultDeployed) return setError("Vault contract not deployed yet.");
-    const parsed = parseUnits(amount || "0", ERC20_DEC);
-    executeTx("Withdrawing…", () => {
-      const vault = new Contract(getAddress(vaultAddress), VAULT_ABI, signer);
-      return vault.withdraw(parsed);
-    });
-  };
-
+  const handleApprove = () => { if (!vaultDeployed) return setError("Vault not deployed."); executeTx("Approving…", () => { const u = new Contract(getAddress(USDC_ADDRESS), USDC_ABI, signer); return u.approve(getAddress(vaultAddress), parseUnits(amount||"0", ERC20_DEC)); }); };
+  const handleDeposit = () => { if (!vaultDeployed) return setError("Vault not deployed."); executeTx("Depositing…", () => { const v = new Contract(getAddress(vaultAddress), VAULT_ABI, signer); return v.deposit(parseUnits(amount||"0", ERC20_DEC)); }); };
+  const handleWithdraw = () => { if (!vaultDeployed) return setError("Vault not deployed."); executeTx("Withdrawing…", () => { const v = new Contract(getAddress(vaultAddress), VAULT_ABI, signer); return v.withdraw(parseUnits(amount||"0", ERC20_DEC)); }); };
   const handleTransfer = () => {
-    if (!recipient || !isAddress(recipient)) {
-      return setError("Enter a valid recipient address.");
-    }
-    const checkedTo = getAddress(recipient);
-
-    if (vaultDeployed) {
-      const parsed = parseUnits(amount || "0", ERC20_DEC);
-      executeTx("Transferring…", () => {
-        const vault = new Contract(getAddress(vaultAddress), VAULT_ABI, signer);
-        return vault.transfer(checkedTo, parsed);
-      });
-    } else {
-      const parsed = parseUnits(amount || "0", NATIVE_DEC);
-      executeTx("Sending USDC…", () => {
-        return signer.sendTransaction({ to: checkedTo, value: parsed });
-      });
-    }
+    if (!recipient || !isAddress(recipient)) return setError("Enter a valid recipient address.");
+    const to = getAddress(recipient);
+    if (vaultDeployed) executeTx("Transferring…", () => { const v = new Contract(getAddress(vaultAddress), VAULT_ABI, signer); return v.transfer(to, parseUnits(amount||"0", ERC20_DEC)); });
+    else executeTx("Sending USDC…", () => signer.sendTransaction({ to, value: parseUnits(amount||"0", NATIVE_DEC) }));
   };
 
-  /* ─── Derived State ────────────────────────────────── */
-  const needsApproval =
-    tab === "deposit" &&
-    amount &&
-    BigInt(allowance) < parseUnits(amount || "0", ERC20_DEC);
+  const needsApproval = tab === "deposit" && amount && BigInt(allowance) < parseUnits(amount || "0", ERC20_DEC);
 
   /* ─── Render ───────────────────────────────────────── */
   return (
     <>
       <style>{`
-        *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-
-        :root {
-          --bg:        #0b0e11;
-          --surface:   #131820;
-          --surface-2: #1a2230;
-          --border:    #1e293b;
-          --text:      #e2e8f0;
-          --text-dim:  #64748b;
-          --accent:    #22d3ee;
-          --accent-2:  #06b6d4;
-          --green:     #34d399;
-          --red:       #f87171;
-          --orange:    #fbbf24;
-          --radius:    12px;
-          --font-mono: 'JetBrains Mono', monospace;
-          --font-sans: 'DM Sans', system-ui, sans-serif;
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800&display=swap');
+        *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+        :root{
+          --bg:#060910;--surface:rgba(13,18,28,.92);--surface-2:rgba(16,22,36,.7);
+          --border:rgba(34,211,238,.06);--border-h:rgba(34,211,238,.14);
+          --text:#e8edf5;--dim:#4e5d75;
+          --accent:#22d3ee;--accent-2:#06b6d4;
+          --green:#34d399;--red:#f87171;--orange:#fbbf24;
+          --mono:'JetBrains Mono',monospace;--sans:'Outfit',system-ui,sans-serif;
         }
-
-        body {
-          background: var(--bg);
-          color: var(--text);
-          font-family: var(--font-sans);
-          min-height: 100vh;
-          overflow-x: hidden;
+        html{height:100%}
+        body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;overflow-x:hidden}
+        body::before{
+          content:'';position:fixed;inset:0;
+          background:
+            radial-gradient(ellipse 55% 45% at 15% 5%,rgba(34,211,238,.045) 0%,transparent 55%),
+            radial-gradient(ellipse 35% 35% at 85% 95%,rgba(6,182,212,.035) 0%,transparent 55%),
+            radial-gradient(ellipse 40% 25% at 50% 50%,rgba(129,140,248,.018) 0%,transparent 50%);
+          pointer-events:none;z-index:0;
         }
-
-        /* ── Ambient Glow ── */
-        body::before {
-          content: '';
-          position: fixed;
-          top: -40%; left: -20%;
-          width: 80%; height: 80%;
-          background: radial-gradient(ellipse, rgba(34,211,238,.07) 0%, transparent 70%);
-          pointer-events: none;
-          z-index: 0;
+        body::after{
+          content:'';position:fixed;inset:0;
+          background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+          opacity:.02;pointer-events:none;z-index:0;
         }
-        body::after {
-          content: '';
-          position: fixed;
-          bottom: -30%; right: -10%;
-          width: 60%; height: 60%;
-          background: radial-gradient(ellipse, rgba(6,182,212,.05) 0%, transparent 70%);
-          pointer-events: none;
-          z-index: 0;
-        }
-
-        .shell {
-          position: relative; z-index: 1;
-          max-width: 520px;
-          margin: 0 auto;
-          padding: 32px 20px 64px;
-        }
+        .app{position:relative;z-index:1;max-width:460px;margin:0 auto;padding:48px 16px 80px}
 
         /* ── Header ── */
-        .header {
-          text-align: center;
-          margin-bottom: 32px;
+        .hdr{text-align:center;margin-bottom:40px}
+        .hdr-logo{
+          display:inline-flex;align-items:center;gap:12px;margin-bottom:10px;
         }
-        .logo {
-          font-family: var(--font-mono);
-          font-size: 28px;
-          font-weight: 700;
-          background: linear-gradient(135deg, var(--accent), #818cf8);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          letter-spacing: -0.5px;
+        .hdr-icon{
+          width:38px;height:38px;border-radius:11px;
+          background:linear-gradient(135deg,var(--accent-2),var(--accent));
+          display:flex;align-items:center;justify-content:center;
+          font-size:17px;font-weight:800;color:var(--bg);font-family:var(--mono);
+          box-shadow:0 0 24px rgba(34,211,238,.18),inset 0 1px 0 rgba(255,255,255,.15);
         }
-        .logo span { opacity: .5; font-weight: 400; }
-        .subtitle {
-          color: var(--text-dim);
-          font-size: 13px;
-          margin-top: 4px;
-          font-family: var(--font-mono);
+        .hdr-name{
+          font-family:var(--mono);font-size:28px;font-weight:700;
+          color:var(--text);letter-spacing:-1px;
+        }
+        .hdr-badge{
+          display:inline-block;
+          font-size:10px;font-family:var(--mono);font-weight:600;
+          color:var(--accent);letter-spacing:1px;text-transform:uppercase;
+          background:rgba(34,211,238,.06);border:1px solid rgba(34,211,238,.1);
+          padding:4px 14px;border-radius:999px;
         }
 
         /* ── Card ── */
-        .card {
-          background: var(--surface);
-          border: 1px solid var(--border);
-          border-radius: var(--radius);
-          padding: 24px;
-          margin-bottom: 16px;
-          transition: border-color .2s;
+        .crd{
+          background:var(--surface);
+          border:1px solid var(--border);
+          border-radius:16px;padding:22px 24px;margin-bottom:10px;
+          backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+          transition:border-color .25s;
+          animation:up .4s ease both;
         }
-        .card:hover { border-color: #2a3a50; }
-
-        .card-label {
-          font-size: 11px;
-          font-weight: 600;
-          text-transform: uppercase;
-          letter-spacing: 1.2px;
-          color: var(--text-dim);
-          margin-bottom: 12px;
+        .crd:nth-child(2){animation-delay:.04s}
+        .crd:nth-child(3){animation-delay:.08s}
+        .crd:nth-child(4){animation-delay:.12s}
+        .crd:hover{border-color:var(--border-h)}
+        @keyframes up{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+        .crd-lbl{
+          font-size:10px;font-weight:700;text-transform:uppercase;
+          letter-spacing:1.6px;color:var(--dim);margin-bottom:14px;
         }
 
         /* ── Wallet Row ── */
-        .wallet-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
+        .w-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+        .w-addr{font-family:var(--mono);font-size:16px;font-weight:600}
+        .bdg{
+          font-family:var(--mono);font-size:10px;padding:5px 12px;
+          border-radius:999px;font-weight:700;letter-spacing:.4px;
         }
-        .wallet-addr {
-          font-family: var(--font-mono);
-          font-size: 15px;
-          font-weight: 500;
+        .bdg-ok{background:rgba(52,211,153,.08);color:var(--green);border:1px solid rgba(52,211,153,.12)}
+        .bdg-bad{background:rgba(248,113,113,.08);color:var(--red);border:1px solid rgba(248,113,113,.12)}
+        .sw-btn{
+          background:rgba(248,113,113,.08);color:var(--red);
+          border:1px solid rgba(248,113,113,.14);
+          padding:5px 12px;border-radius:7px;font-size:10px;font-weight:700;
+          cursor:pointer;font-family:var(--sans);transition:all .15s;
         }
-        .network-badge {
-          font-family: var(--font-mono);
-          font-size: 11px;
-          padding: 4px 10px;
-          border-radius: 999px;
-          font-weight: 600;
-        }
-        .net-ok   { background: rgba(52,211,153,.12); color: var(--green); }
-        .net-bad  { background: rgba(248,113,113,.12); color: var(--red);   }
+        .sw-btn:hover{background:rgba(248,113,113,.16)}
 
-        /* ── Balance Grid ── */
-        .bal-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 12px;
+        /* ── Balances ── */
+        .bg{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+        .bx{
+          background:rgba(8,12,22,.65);border:1px solid var(--border);
+          border-radius:12px;padding:18px 16px;transition:border-color .2s;
         }
-        .bal-box {
-          background: var(--surface-2);
-          border-radius: 10px;
-          padding: 16px;
+        .bx:hover{border-color:var(--border-h)}
+        .bx-lbl{
+          font-size:9px;color:var(--dim);font-weight:700;
+          text-transform:uppercase;letter-spacing:1.2px;margin-bottom:10px;
         }
-        .bal-title {
-          font-size: 11px;
-          color: var(--text-dim);
-          font-weight: 600;
-          text-transform: uppercase;
-          letter-spacing: .8px;
-          margin-bottom: 6px;
-        }
-        .bal-value {
-          font-family: var(--font-mono);
-          font-size: 20px;
-          font-weight: 700;
-        }
-        .bal-unit {
-          font-size: 12px;
-          color: var(--text-dim);
-          font-weight: 500;
-          margin-left: 4px;
-        }
+        .bx-val{font-family:var(--mono);font-size:24px;font-weight:700;line-height:1}
+        .bx-u{font-size:11px;color:var(--dim);font-weight:500;margin-left:5px;letter-spacing:.3px}
 
         /* ── Tabs ── */
-        .tabs {
-          display: flex;
-          gap: 4px;
-          background: var(--surface-2);
-          border-radius: 10px;
-          padding: 4px;
-          margin-bottom: 20px;
+        .tabs{
+          display:flex;gap:2px;
+          background:rgba(8,12,22,.5);border:1px solid var(--border);
+          border-radius:11px;padding:3px;margin-bottom:18px;
         }
-        .tab-btn {
-          flex: 1;
-          background: none;
-          border: none;
-          color: var(--text-dim);
-          font-family: var(--font-sans);
-          font-size: 13px;
-          font-weight: 600;
-          padding: 10px 0;
-          border-radius: 8px;
-          cursor: pointer;
-          transition: all .15s;
+        .tb{
+          flex:1;background:none;border:none;color:var(--dim);
+          font-family:var(--sans);font-size:13px;font-weight:600;
+          padding:10px 0;border-radius:9px;cursor:pointer;transition:all .2s;
         }
-        .tab-btn:hover { color: var(--text); }
-        .tab-btn.active {
-          background: var(--surface);
-          color: var(--accent);
-          box-shadow: 0 1px 3px rgba(0,0,0,.3);
+        .tb:hover{color:var(--text)}
+        .tb.on{
+          background:rgba(34,211,238,.07);color:var(--accent);
+          box-shadow:0 0 10px rgba(34,211,238,.04);
         }
 
         /* ── Inputs ── */
-        .input-group { margin-bottom: 12px; }
-        .input-label {
-          display: block;
-          font-size: 12px;
-          font-weight: 600;
-          color: var(--text-dim);
-          margin-bottom: 6px;
+        .fld{margin-bottom:12px}
+        .fld-lbl{display:block;font-size:11px;font-weight:600;color:var(--dim);margin-bottom:6px;letter-spacing:.3px}
+        .inp{
+          width:100%;background:rgba(8,12,22,.65);
+          border:1px solid var(--border);border-radius:10px;
+          padding:13px 14px;color:var(--text);
+          font-family:var(--mono);font-size:14px;font-weight:500;
+          outline:none;transition:border-color .2s,box-shadow .2s;
         }
-        .input {
-          width: 100%;
-          background: var(--surface-2);
-          border: 1px solid var(--border);
-          border-radius: 10px;
-          padding: 12px 14px;
-          color: var(--text);
-          font-family: var(--font-mono);
-          font-size: 14px;
-          outline: none;
-          transition: border-color .2s;
-        }
-        .input::placeholder { color: #374151; }
-        .input:focus { border-color: var(--accent-2); }
+        .inp::placeholder{color:#1f2d42}
+        .inp:focus{border-color:rgba(34,211,238,.25);box-shadow:0 0 0 3px rgba(34,211,238,.05)}
 
         /* ── Buttons ── */
-        .btn-row { display: flex; gap: 8px; margin-top: 16px; }
+        .br{display:flex;gap:8px;margin-top:16px}
+        .bt{
+          flex:1;padding:14px 0;border:none;border-radius:10px;
+          font-family:var(--sans);font-size:14px;font-weight:700;
+          cursor:pointer;transition:all .2s;letter-spacing:.2px;
+        }
+        .bt:disabled{opacity:.3;cursor:not-allowed}
+        .bt-p{background:linear-gradient(135deg,var(--accent-2),var(--accent));color:var(--bg)}
+        .bt-p:not(:disabled):hover{box-shadow:0 4px 24px rgba(34,211,238,.22);transform:translateY(-1px)}
+        .bt-p:not(:disabled):active{transform:translateY(0)}
+        .bt-o{background:transparent;border:1px solid rgba(34,211,238,.18);color:var(--accent)}
+        .bt-o:not(:disabled):hover{background:rgba(34,211,238,.05);border-color:rgba(34,211,238,.3)}
 
-        .btn {
-          flex: 1;
-          padding: 14px 0;
-          border: none;
-          border-radius: 10px;
-          font-family: var(--font-sans);
-          font-size: 14px;
-          font-weight: 700;
-          cursor: pointer;
-          transition: all .15s;
-          position: relative;
-          overflow: hidden;
+        .bt-con{
+          width:100%;padding:16px;
+          background:linear-gradient(135deg,var(--accent-2),var(--accent));
+          color:var(--bg);border:none;border-radius:12px;
+          font-family:var(--sans);font-size:15px;font-weight:700;
+          cursor:pointer;transition:all .25s;letter-spacing:.2px;
         }
-        .btn:disabled {
-          opacity: .4;
-          cursor: not-allowed;
-        }
+        .bt-con:hover{box-shadow:0 4px 32px rgba(34,211,238,.22);transform:translateY(-2px)}
+        .bt-con:active{transform:translateY(0)}
 
-        .btn-primary {
-          background: linear-gradient(135deg, var(--accent-2), var(--accent));
-          color: #0b0e11;
+        /* ── Status ── */
+        .tx-b{
+          background:rgba(52,211,153,.05);border:1px solid rgba(52,211,153,.1);
+          border-radius:10px;padding:12px 14px;margin-bottom:12px;
+          font-family:var(--mono);font-size:11px;color:var(--green);
+          word-break:break-all;line-height:1.6;
         }
-        .btn-primary:not(:disabled):hover {
-          box-shadow: 0 0 20px rgba(34,211,238,.25);
-          transform: translateY(-1px);
+        .tx-b a{color:var(--green);text-decoration:none;opacity:.85}
+        .tx-b a:hover{opacity:1;text-decoration:underline}
+        .tx-l{font-size:9px;opacity:.5;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:1px;font-weight:600}
+        .er-b{
+          background:rgba(248,113,113,.05);border:1px solid rgba(248,113,113,.1);
+          border-radius:10px;padding:12px 14px;margin-bottom:12px;
+          font-size:12px;color:var(--red);word-break:break-word;line-height:1.5;
         }
+        .ld-p{
+          color:var(--orange);font-family:var(--mono);font-size:12px;
+          text-align:center;padding:8px 0;animation:pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
-        .btn-outline {
-          background: transparent;
-          border: 1px solid var(--border);
-          color: var(--text);
+        /* ── Notice ── */
+        .ntc{
+          background:rgba(251,191,36,.03);border:1px solid rgba(251,191,36,.1);
+          border-radius:10px;padding:14px;margin-bottom:12px;text-align:center;
         }
-        .btn-outline:not(:disabled):hover {
-          border-color: var(--accent);
-          color: var(--accent);
+        .ntc p{color:var(--orange);font-size:12px;margin-bottom:10px;line-height:1.5}
+        .ntc-btn{
+          background:rgba(251,191,36,.07);color:var(--orange);
+          border:1px solid rgba(251,191,36,.15);
+          padding:6px 16px;border-radius:7px;font-size:11px;font-weight:700;
+          cursor:pointer;font-family:var(--sans);transition:all .15s;
         }
+        .ntc-btn:hover{background:rgba(251,191,36,.14)}
 
-        .btn-connect {
-          width: 100%;
-          padding: 16px;
-          background: linear-gradient(135deg, var(--accent-2), #818cf8);
-          color: #0b0e11;
-          border: none;
-          border-radius: 10px;
-          font-family: var(--font-sans);
-          font-size: 15px;
-          font-weight: 700;
-          cursor: pointer;
-          transition: all .2s;
+        /* ── Config ── */
+        .cfg-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+        .cfg-x{
+          background:none;border:none;color:var(--dim);cursor:pointer;
+          font-size:18px;padding:2px 6px;border-radius:5px;transition:all .15s;
         }
-        .btn-connect:hover {
-          box-shadow: 0 0 30px rgba(34,211,238,.2);
-          transform: translateY(-1px);
+        .cfg-x:hover{background:rgba(255,255,255,.04);color:var(--text)}
+        .steps{display:flex;flex-direction:column;gap:6px}
+        .stp{
+          display:flex;gap:12px;align-items:flex-start;
+          padding:11px 14px;background:rgba(8,12,22,.5);
+          border:1px solid var(--border);border-radius:10px;transition:border-color .2s;
         }
+        .stp:hover{border-color:var(--border-h)}
+        .stp-n{
+          flex:0 0 22px;height:22px;
+          background:linear-gradient(135deg,var(--accent-2),var(--accent));
+          color:var(--bg);border-radius:50%;
+          display:flex;align-items:center;justify-content:center;
+          font-size:11px;font-weight:800;font-family:var(--mono);margin-top:1px;
+        }
+        .stp-t{display:block;font-size:12px;font-weight:600;color:var(--text);margin-bottom:2px}
+        .stp-d{display:block;font-size:11px;color:var(--dim);line-height:1.5}
+        .stp-d code{background:rgba(34,211,238,.05);color:var(--accent);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:10px}
+        .stp-a{color:var(--accent);font-size:11px;font-weight:600;text-decoration:none;margin-top:2px;display:inline-block}
+        .stp-a:hover{text-decoration:underline}
+        .ai-row{display:flex;gap:8px;margin-top:14px}
+        .ai-row .inp{flex:1}
+        .ai-row .bt{flex:0 0 auto;padding:13px 24px}
+        .v-saved{
+          margin-top:10px;padding:10px 14px;
+          background:rgba(52,211,153,.04);border:1px solid rgba(52,211,153,.1);
+          border-radius:8px;font-family:var(--mono);font-size:11px;color:var(--green);word-break:break-all;
+        }
+        .v-tag{
+          display:flex;justify-content:center;align-items:center;gap:8px;
+          margin-top:2px;margin-bottom:6px;
+        }
+        .v-tag span{font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:.3px}
+        .v-tag button{
+          background:none;border:none;color:var(--accent);cursor:pointer;
+          font-size:10px;font-family:var(--sans);font-weight:600;opacity:.6;transition:opacity .15s;
+        }
+        .v-tag button:hover{opacity:1}
 
-        .btn-switch {
-          background: rgba(248,113,113,.12);
-          color: var(--red);
-          border: 1px solid rgba(248,113,113,.2);
-          padding: 10px 16px;
-          border-radius: 8px;
-          font-size: 12px;
-          font-weight: 700;
-          cursor: pointer;
-          transition: all .15s;
-          font-family: var(--font-sans);
+        /* ── Connect Card ── */
+        .con-crd{text-align:center;padding:52px 24px}
+        .con-ico{
+          width:60px;height:60px;border-radius:18px;
+          background:linear-gradient(135deg,rgba(34,211,238,.08),rgba(129,140,248,.06));
+          border:1px solid rgba(34,211,238,.1);
+          display:flex;align-items:center;justify-content:center;
+          margin:0 auto 22px;font-size:24px;
+          box-shadow:0 0 30px rgba(34,211,238,.06);
         }
-        .btn-switch:hover { background: rgba(248,113,113,.2); }
-
-        /* ── Status Banners ── */
-        .tx-hash {
-          background: rgba(52,211,153,.08);
-          border: 1px solid rgba(52,211,153,.2);
-          border-radius: 10px;
-          padding: 12px 14px;
-          margin-bottom: 16px;
-          font-family: var(--font-mono);
-          font-size: 12px;
-          color: var(--green);
-          word-break: break-all;
-        }
-        .tx-hash a { color: var(--green); text-decoration: underline; }
-        .tx-label { font-size: 10px; opacity: .7; display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .8px; }
-
-        .error-box {
-          background: rgba(248,113,113,.08);
-          border: 1px solid rgba(248,113,113,.2);
-          border-radius: 10px;
-          padding: 12px 14px;
-          margin-bottom: 16px;
-          font-size: 13px;
-          color: var(--red);
-          word-break: break-word;
-        }
-
-        .loading-text {
-          color: var(--orange);
-          font-family: var(--font-mono);
-          font-size: 13px;
-          text-align: center;
-          padding: 8px 0;
-          animation: pulse 1.5s ease-in-out infinite;
-        }
-
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: .5; }
-        }
-
-        /* ── Notice Box ── */
-        .notice-box {
-          background: rgba(251,191,36,.06);
-          border: 1px solid rgba(251,191,36,.18);
-          border-radius: 10px;
-          padding: 14px;
-          margin-bottom: 16px;
-          text-align: center;
-        }
-        .notice-box p {
-          color: var(--orange);
-          font-size: 13px;
-          margin-bottom: 10px;
-        }
-        .btn-small {
-          background: rgba(251,191,36,.12);
-          color: var(--orange);
-          border: 1px solid rgba(251,191,36,.25);
-          padding: 6px 14px;
-          border-radius: 6px;
-          font-size: 12px;
-          font-weight: 700;
-          cursor: pointer;
-          font-family: var(--font-sans);
-          transition: all .15s;
-        }
-        .btn-small:hover { background: rgba(251,191,36,.2); }
-
-        /* ── Deploy Steps ── */
-        .steps { display: flex; flex-direction: column; gap: 12px; }
-        .step {
-          display: flex;
-          gap: 12px;
-          align-items: flex-start;
-          padding: 10px 12px;
-          background: var(--surface-2);
-          border-radius: 8px;
-        }
-        .step-num {
-          flex: 0 0 24px;
-          height: 24px;
-          background: linear-gradient(135deg, var(--accent-2), var(--accent));
-          color: #0b0e11;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 12px;
-          font-weight: 800;
-          font-family: var(--font-mono);
-          margin-top: 1px;
-        }
-        .step-title {
-          display: block;
-          font-size: 13px;
-          font-weight: 600;
-          color: var(--text);
-          margin-bottom: 3px;
-        }
-        .step-desc {
-          display: block;
-          font-size: 12px;
-          color: var(--text-dim);
-          line-height: 1.5;
-        }
-        .step-desc code {
-          background: rgba(34,211,238,.08);
-          color: var(--accent);
-          padding: 1px 5px;
-          border-radius: 4px;
-          font-family: var(--font-mono);
-          font-size: 11px;
-        }
-        .step-link {
-          display: inline-block;
-          color: var(--accent);
-          font-size: 12px;
-          font-weight: 600;
-          text-decoration: none;
-          margin-top: 2px;
-        }
-        .step-link:hover { text-decoration: underline; }
+        .con-txt{color:var(--dim);font-size:14px;margin-bottom:28px;line-height:1.6}
 
         /* ── Footer ── */
-        .footer {
-          text-align: center;
-          margin-top: 32px;
-          color: var(--text-dim);
-          font-size: 11px;
-          font-family: var(--font-mono);
+        .ftr{
+          text-align:center;margin-top:32px;
+          color:var(--dim);font-size:10px;font-family:var(--mono);
+          letter-spacing:1px;opacity:.4;
         }
 
-        @media (max-width: 540px) {
-          .shell { padding: 20px 16px 48px; }
-          .bal-value { font-size: 16px; }
+        @media(max-width:540px){
+          .app{padding:28px 14px 64px}
+          .bx-val{font-size:19px}
+          .hdr-name{font-size:24px}
+          .con-crd{padding:40px 20px}
         }
       `}</style>
 
-      <div className="shell">
-        {/* ── Header ────────────────────────────────── */}
-        <div className="header">
-          <div className="logo">
-            ArcVault <span>/ testnet</span>
+      <div className="app">
+        {/* ── Header ── */}
+        <div className="hdr">
+          <div className="hdr-logo">
+            <div className="hdr-icon">A</div>
+            <span className="hdr-name">ArcVault</span>
           </div>
-          <div className="subtitle">Secure USDC Vault on Arc Testnet</div>
+          <br />
+          <span className="hdr-badge">Testnet</span>
         </div>
 
-        {/* ── Not Connected ────────────────────────── */}
+        {/* ── Not Connected ── */}
         {!account && (
-          <div className="card" style={{ textAlign: "center" }}>
-            <p style={{ color: "var(--text-dim)", marginBottom: 20, fontSize: 14 }}>
-              Connect your wallet to get started
-            </p>
-            <button className="btn-connect" onClick={connectWallet}>
-              Connect MetaMask
-            </button>
+          <div className="crd con-crd">
+            <div className="con-ico">◈</div>
+            <div className="con-txt">
+              Connect your wallet to manage<br />USDC on Arc Testnet
+            </div>
+            <button className="bt-con" onClick={connectWallet}>Connect Wallet</button>
           </div>
         )}
 
-        {/* ── Connected ───────────────────────────── */}
+        {/* ── Connected ── */}
         {account && (
           <>
-            {/* Wallet Info */}
-            <div className="card">
-              <div className="card-label">Wallet</div>
-              <div className="wallet-row">
-                <span className="wallet-addr">{shortenAddr(account)}</span>
+            <div className="crd">
+              <div className="crd-lbl">Wallet</div>
+              <div className="w-row">
+                <span className="w-addr">{shortenAddr(account)}</span>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span
-                    className={`network-badge ${isCorrectNetwork ? "net-ok" : "net-bad"}`}
-                  >
-                    {isCorrectNetwork
-                      ? "Arc Testnet"
-                      : `Chain ${chainId}`}
+                  <span className={`bdg ${isCorrectNetwork ? "bdg-ok" : "bdg-bad"}`}>
+                    {isCorrectNetwork ? "Arc Testnet" : `Chain ${chainId}`}
                   </span>
-                  {!isCorrectNetwork && (
-                    <button className="btn-switch" onClick={switchToArc}>
-                      Switch
-                    </button>
-                  )}
+                  {!isCorrectNetwork && <button className="sw-btn" onClick={switchToArc}>Switch</button>}
                 </div>
               </div>
             </div>
 
-            {/* Balances */}
             {isCorrectNetwork && (
               <>
-                <div className="card">
-                  <div className="card-label">Balances</div>
-                  <div className="bal-grid">
-                    <div className="bal-box">
-                      <div className="bal-title">Wallet USDC</div>
-                      <div className="bal-value">
+                {/* Balances */}
+                <div className="crd">
+                  <div className="crd-lbl">Balances</div>
+                  <div className="bg">
+                    <div className="bx">
+                      <div className="bx-lbl">Wallet</div>
+                      <div className="bx-val">
                         {fmtUsdc(usdcBalance, NATIVE_DEC)}
-                        <span className="bal-unit">USDC</span>
+                        <span className="bx-u">USDC</span>
                       </div>
                     </div>
-                    <div className="bal-box">
-                      <div className="bal-title">Vault Balance</div>
-                      <div className="bal-value">
+                    <div className="bx">
+                      <div className="bx-lbl">Vault</div>
+                      <div className="bx-val">
                         {vaultDeployed
-                          ? <>{fmtUsdc(vaultBalance, ERC20_DEC)}<span className="bal-unit">USDC</span></>
-                          : <span style={{ fontSize: 13, color: "var(--text-dim)" }}>Not deployed</span>
+                          ? <>{fmtUsdc(vaultBalance, ERC20_DEC)}<span className="bx-u">USDC</span></>
+                          : <span style={{ fontSize: 12, color: "var(--dim)", fontFamily: "var(--sans)", fontWeight: 500 }}>—</span>
                         }
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Operations Card */}
-                <div className="card">
-                  <div className="card-label">Operations</div>
-
+                {/* Operations */}
+                <div className="crd">
+                  <div className="crd-lbl">Operations</div>
                   <div className="tabs">
                     {["deposit", "withdraw", "transfer"].map((t) => (
-                      <button
-                        key={t}
-                        className={`tab-btn ${tab === t ? "active" : ""}`}
-                        onClick={() => {
-                          setTab(t);
-                          setError("");
-                          setTxHash("");
-                        }}
-                      >
+                      <button key={t} className={`tb ${tab === t ? "on" : ""}`}
+                        onClick={() => { setTab(t); setError(""); setTxHash(""); }}>
                         {t.charAt(0).toUpperCase() + t.slice(1)}
                       </button>
                     ))}
                   </div>
 
-                  {/* Vault not deployed notice */}
                   {!vaultDeployed && (tab === "deposit" || tab === "withdraw") && (
-                    <div className="notice-box">
-                      <p>Vault contract not deployed yet. Transfer tab works as direct USDC send.</p>
-                      <button className="btn-small" onClick={() => setShowConfig(true)}>
-                        Connect Vault
-                      </button>
+                    <div className="ntc">
+                      <p>Vault not connected yet. Use Transfer for direct sends.</p>
+                      <button className="ntc-btn" onClick={() => setShowConfig(true)}>Connect Vault</button>
                     </div>
                   )}
 
-                  {/* Status */}
                   {txHash && (
-                    <div className="tx-hash">
-                      <span className="tx-label">Transaction Hash</span>
-                      <a
-                        href={`${ARC_TESTNET.blockExplorerUrls[0]}/tx/${txHash}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {txHash}
-                      </a>
+                    <div className="tx-b">
+                      <span className="tx-l">Transaction</span>
+                      <a href={`${ARC_TESTNET.blockExplorerUrls[0]}/tx/${txHash}`} target="_blank" rel="noreferrer">{txHash}</a>
                     </div>
                   )}
-                  {error && <div className="error-box">{error}</div>}
-                  {loading && <div className="loading-text">{loading}</div>}
+                  {error && <div className="er-b">{error}</div>}
+                  {loading && <div className="ld-p">{loading}</div>}
 
-                  {/* Transfer Recipient */}
                   {tab === "transfer" && (
-                    <div className="input-group">
-                      <label className="input-label">Recipient Address</label>
-                      <input
-                        className="input"
-                        placeholder="0x..."
-                        value={recipient}
-                        onChange={(e) => setRecipient(e.target.value)}
-                      />
+                    <div className="fld">
+                      <label className="fld-lbl">Recipient Address</label>
+                      <input className="inp" placeholder="0x..." value={recipient} onChange={(e) => setRecipient(e.target.value)} />
                     </div>
                   )}
-
-                  {/* Amount */}
-                  <div className="input-group">
-                    <label className="input-label">Amount (USDC)</label>
-                    <input
-                      className="input"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
-                    />
+                  <div className="fld">
+                    <label className="fld-lbl">Amount (USDC)</label>
+                    <input className="inp" type="number" min="0" step="0.01" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} />
                   </div>
 
-                  {/* Buttons */}
-                  <div className="btn-row">
+                  <div className="br">
                     {tab === "deposit" && needsApproval && (
-                      <button
-                        className="btn btn-outline"
-                        disabled={!!loading || !amount || !vaultDeployed}
-                        onClick={handleApprove}
-                      >
-                        Approve
-                      </button>
+                      <button className="bt bt-o" disabled={!!loading || !amount || !vaultDeployed} onClick={handleApprove}>Approve</button>
                     )}
                     {tab === "deposit" && (
-                      <button
-                        className="btn btn-primary"
-                        disabled={!!loading || !amount || needsApproval || !vaultDeployed}
-                        onClick={handleDeposit}
-                      >
-                        Deposit
-                      </button>
+                      <button className="bt bt-p" disabled={!!loading || !amount || needsApproval || !vaultDeployed} onClick={handleDeposit}>Deposit</button>
                     )}
                     {tab === "withdraw" && (
-                      <button
-                        className="btn btn-primary"
-                        disabled={!!loading || !amount || !vaultDeployed}
-                        onClick={handleWithdraw}
-                      >
-                        Withdraw
-                      </button>
+                      <button className="bt bt-p" disabled={!!loading || !amount || !vaultDeployed} onClick={handleWithdraw}>Withdraw</button>
                     )}
                     {tab === "transfer" && (
-                      <button
-                        className="btn btn-primary"
-                        disabled={!!loading || !amount || !recipient}
-                        onClick={handleTransfer}
-                      >
-                        {vaultDeployed ? "Transfer" : "Send USDC"}
-                      </button>
+                      <button className="bt bt-p" disabled={!!loading || !amount || !recipient} onClick={handleTransfer}>{vaultDeployed ? "Transfer" : "Send USDC"}</button>
                     )}
                   </div>
                 </div>
 
-                {/* ── Vault Config Card ─────────────── */}
+                {/* ── Vault Config ── */}
                 {!vaultDeployed && !showConfig && (
-                  <div className="card" style={{ textAlign: "center" }}>
-                    <div className="card-label">Vault Setup</div>
-                    <p style={{ color: "var(--text-dim)", fontSize: 13, marginBottom: 14 }}>
-                      Deploy your ArcVault contract via Remix to enable Deposit & Withdraw.
+                  <div className="crd" style={{ textAlign: "center", padding: "28px 24px" }}>
+                    <div className="crd-lbl">Vault Setup</div>
+                    <p style={{ color: "var(--dim)", fontSize: 13, marginBottom: 16, lineHeight: 1.5 }}>
+                      Deploy your ArcVault contract to enable Deposit & Withdraw.
                     </p>
-                    <button className="btn btn-primary" style={{ maxWidth: 220 }} onClick={() => setShowConfig(true)}>
-                      Deploy & Connect Vault
-                    </button>
+                    <button className="bt bt-p" style={{ maxWidth: 240, margin: "0 auto" }} onClick={() => setShowConfig(true)}>Deploy & Connect Vault</button>
                   </div>
                 )}
 
                 {showConfig && (
-                  <div className="card">
-                    <div className="card-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span>Deploy Vault via Remix</span>
-                      <button onClick={() => setShowConfig(false)} style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", fontSize: 16 }}>✕</button>
+                  <div className="crd">
+                    <div className="cfg-h">
+                      <span className="crd-lbl" style={{ margin: 0 }}>Connect Vault</span>
+                      <button className="cfg-x" onClick={() => setShowConfig(false)}>✕</button>
                     </div>
-
                     <div className="steps">
-                      <div className="step">
-                        <span className="step-num">1</span>
+                      <div className="stp">
+                        <span className="stp-n">1</span>
                         <div>
-                          <span className="step-title">Open Remix IDE</span>
-                          <a href="https://remix.ethereum.org" target="_blank" rel="noreferrer" className="step-link">remix.ethereum.org →</a>
+                          <span className="stp-t">Open Deployer</span>
+                          <a href="https://arc-stablecoin-dapp.vercel.app/deployer.html" target="_blank" rel="noreferrer" className="stp-a">deployer.html →</a>
                         </div>
                       </div>
-                      <div className="step">
-                        <span className="step-num">2</span>
+                      <div className="stp">
+                        <span className="stp-n">2</span>
                         <div>
-                          <span className="step-title">Create new file</span>
-                          <span className="step-desc">File Explorer → "+" → name it <code>ArcVault.sol</code></span>
+                          <span className="stp-t">Deploy Contract</span>
+                          <span className="stp-d">Click "Deploy ArcVault" and confirm in MetaMask</span>
                         </div>
                       </div>
-                      <div className="step">
-                        <span className="step-num">3</span>
+                      <div className="stp">
+                        <span className="stp-n">3</span>
                         <div>
-                          <span className="step-title">Paste flattened contract</span>
-                          <span className="step-desc">Copy the flattened contract code and paste into the file</span>
-                        </div>
-                      </div>
-                      <div className="step">
-                        <span className="step-num">4</span>
-                        <div>
-                          <span className="step-title">Compile</span>
-                          <span className="step-desc">Solidity Compiler tab → Select <code>0.8.20</code> → Click "Compile"</span>
-                        </div>
-                      </div>
-                      <div className="step">
-                        <span className="step-num">5</span>
-                        <div>
-                          <span className="step-title">Deploy</span>
-                          <span className="step-desc">
-                            Deploy tab → Environment: <code>Injected Provider (MetaMask)</code> →
-                            Contract: <code>ArcVault</code> →
-                            Constructor arg: <code style={{ color: "var(--accent)", wordBreak: "break-all" }}>0x3600000000000000000000000000000000000000</code> →
-                            Click "Deploy" → Confirm in MetaMask
-                          </span>
-                        </div>
-                      </div>
-                      <div className="step">
-                        <span className="step-num">6</span>
-                        <div>
-                          <span className="step-title">Copy contract address</span>
-                          <span className="step-desc">After deploy, copy the deployed contract address from Remix and paste below</span>
+                          <span className="stp-t">Paste Address Below</span>
+                          <span className="stp-d">Copy the deployed contract address and paste it here</span>
                         </div>
                       </div>
                     </div>
-
-                    <div style={{ marginTop: 16 }}>
-                      <label className="input-label">Vault Contract Address</label>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <input
-                          className="input"
-                          placeholder="0x... (paste from Remix)"
-                          value={vaultInput}
-                          onChange={(e) => setVaultInput(e.target.value)}
-                        />
-                        <button
-                          className="btn btn-primary"
-                          style={{ flex: "0 0 auto", padding: "12px 20px" }}
-                          disabled={!vaultInput || !isAddress(vaultInput)}
-                          onClick={() => {
-                            const addr = getAddress(vaultInput);
-                            setVaultAddress(addr);
-                            localStorage.setItem(SAVED_VAULT_KEY, addr);
-                            setVaultInput("");
-                            setShowConfig(false);
-                            refreshBalances();
-                          }}
-                        >
-                          Save
-                        </button>
-                      </div>
-                      {vaultInput && !isAddress(vaultInput) && (
-                        <span style={{ color: "var(--red)", fontSize: 11, marginTop: 4, display: "block" }}>Invalid address</span>
-                      )}
+                    <div className="ai-row">
+                      <input className="inp" placeholder="0x... contract address" value={vaultInput} onChange={(e) => setVaultInput(e.target.value)} />
+                      <button className="bt bt-p" disabled={!vaultInput || !isAddress(vaultInput)}
+                        onClick={() => {
+                          const a = getAddress(vaultInput);
+                          setVaultAddress(a); localStorage.setItem(SAVED_VAULT_KEY, a);
+                          setVaultInput(""); setShowConfig(false); refreshBalances();
+                        }}>Save</button>
                     </div>
-
-                    {vaultDeployed && (
-                      <div style={{ marginTop: 12, padding: "10px 12px", background: "rgba(52,211,153,.08)", border: "1px solid rgba(52,211,153,.2)", borderRadius: 8 }}>
-                        <span style={{ color: "var(--green)", fontFamily: "var(--font-mono)", fontSize: 12, wordBreak: "break-all" }}>
-                          ✓ Vault: {vaultAddress}
-                        </span>
-                      </div>
+                    {vaultInput && !isAddress(vaultInput) && (
+                      <span style={{ color: "var(--red)", fontSize: 10, marginTop: 4, display: "block" }}>Invalid address</span>
                     )}
+                    {vaultDeployed && <div className="v-saved">✓ {vaultAddress}</div>}
                   </div>
                 )}
 
-                {/* Show connected vault address if already set */}
                 {vaultDeployed && !showConfig && (
-                  <div style={{ display: "flex", justifyContent: "center", gap: 8, alignItems: "center", marginTop: 4, marginBottom: 8 }}>
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-dim)" }}>
-                      Vault: {shortenAddr(vaultAddress)}
-                    </span>
-                    <button
-                      onClick={() => setShowConfig(true)}
-                      style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", fontSize: 11, textDecoration: "underline" }}
-                    >
-                      change
-                    </button>
+                  <div className="v-tag">
+                    <span>Vault: {shortenAddr(vaultAddress)}</span>
+                    <button onClick={() => setShowConfig(true)}>change</button>
                   </div>
                 )}
               </>
@@ -1020,9 +593,7 @@ export default function App() {
           </>
         )}
 
-        <div className="footer">
-          built for Arc Testnet · {new Date().getFullYear()}
-        </div>
+        <div className="ftr">ARCVAULT · {new Date().getFullYear()}</div>
       </div>
     </>
   );
